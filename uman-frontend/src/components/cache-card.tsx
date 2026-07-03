@@ -22,18 +22,19 @@ export function CacheCard({ summary }: { summary: StatsSummary | null }) {
     )
   }
 
-  const rate = summary.cache_hit_rate
-  const pct = (rate * 100).toFixed(1)
-  const hasCache = summary.cached_tokens > 0
-  const variant = hasCache ? "default" : "secondary"
+  const hitRate = summary.cache_hit_rate
+  const hitPct = (hitRate * 100).toFixed(1)
+  const hasHits = summary.cached_tokens > 0
+  const hasWrites = summary.cache_creation_tokens > 0
+  const hasAny = hasHits || hasWrites
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Prompt Cache</CardTitle>
-          <Badge variant={variant}>
-            {hasCache ? `${pct}% hits` : "no hits yet"}
+          <Badge variant={hasAny ? "default" : "secondary"}>
+            {hasAny ? `${hitPct}% hits` : "no hits yet"}
           </Badge>
         </div>
       </CardHeader>
@@ -41,12 +42,24 @@ export function CacheCard({ summary }: { summary: StatsSummary | null }) {
         <div className="grid grid-cols-2 gap-2">
           <div>
             <span className="text-muted-foreground">Hit rate</span>
-            <p className="font-mono text-lg font-semibold">{pct}%</p>
+            <p className="font-mono text-lg font-semibold">{hitPct}%</p>
           </div>
           <div>
-            <span className="text-muted-foreground">Cached tokens</span>
-            <p className="font-mono text-lg font-semibold">
+            <span className="text-muted-foreground">Cache reqs</span>
+            <p className="font-mono text-lg font-semibold">{summary.cached}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+          <div>
+            <span className="text-muted-foreground">Hits (read)</span>
+            <p className="font-mono text-emerald-500">
               {formatTokens(summary.cached_tokens)}
+            </p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Writes (create)</span>
+            <p className="font-mono text-cyan-500">
+              {formatTokens(summary.cache_creation_tokens)}
             </p>
           </div>
         </div>
@@ -56,13 +69,14 @@ export function CacheCard({ summary }: { summary: StatsSummary | null }) {
             <p className="font-mono">{formatTokens(summary.tokens_in)}</p>
           </div>
           <div>
-            <span className="text-muted-foreground">Cache requests</span>
-            <p className="font-mono">{summary.cached}</p>
+            <span className="text-muted-foreground">Total out</span>
+            <p className="font-mono">{formatTokens(summary.tokens_out)}</p>
           </div>
         </div>
         <p className="text-xs text-muted-foreground pt-2">
-          Parsed from upstream usage block (OpenAI cached_tokens / Anthropic cache_read_input_tokens).
-          Reflects the model's own prompt cache.
+          Parsed from upstream usage (Anthropic cache_read / cache_creation, OpenAI
+          prompt_tokens_details.cached_tokens / cache_creation_tokens). GLM doesn't
+          report cache, so it will show 0s.
         </p>
       </CardContent>
     </Card>

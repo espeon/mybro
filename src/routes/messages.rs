@@ -169,6 +169,7 @@ pub async fn messages(
                         tokens_in: 0,
                         tokens_out: 0,
                         cached_tokens: 0,
+                        cache_creation_tokens: 0,
                         cached: false,
                         error: None,
                     },
@@ -219,7 +220,7 @@ pub async fn messages(
                     state.gate.bump_throttled();
                 }
 
-                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, 0, Some(&error_body));
+                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, 0, 0, Some(&error_body));
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {
@@ -237,7 +238,7 @@ pub async fn messages(
         Err(e) => {
             state.keypool.mark_unhealthy(slot.index, 502);
             log_upstream_error(&state, 1, session.sess_num, &slot.name, 502, &e.to_string());
-            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, 0, Some(&e.to_string()));
+            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, 0, 0, Some(&e.to_string()));
             super::anthropic_error(
                 StatusCode::BAD_GATEWAY,
                 &format!("Upstream error: {}", e),
@@ -259,6 +260,7 @@ fn record_stat(
     pipeline: &'static str,
     key_name: &str,
     cached_tokens: u64,
+    cache_creation_tokens: u64,
     error: Option<&str>,
 ) {
     use crate::stats::RequestRecord;
@@ -276,7 +278,8 @@ fn record_stat(
         tokens_in: 0,
         tokens_out: 0,
         cached_tokens,
-        cached: cached_tokens > 0,
+        cache_creation_tokens,
+        cached: cached_tokens > 0 || cache_creation_tokens > 0,
         error: error.map(|s| s.to_string()),
     });
 }

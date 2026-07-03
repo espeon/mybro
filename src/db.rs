@@ -47,6 +47,7 @@ impl StatsDB {
                  tokens_in INTEGER NOT NULL,
                  tokens_out INTEGER NOT NULL,
                  cached_tokens INTEGER NOT NULL DEFAULT 0,
+                 cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
                  cached INTEGER NOT NULL,
                  error TEXT
              );
@@ -140,6 +141,7 @@ impl StatsDB {
                 SUM(tokens_out) as tokens_out,
                 SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
                 SUM(cached_tokens) as cached_tokens,
+                SUM(cache_creation_tokens) as cache_creation_tokens,
                 AVG(ttft_ms) as avg_ttft
              FROM requests
              WHERE ts_ms >= ?
@@ -173,6 +175,7 @@ impl StatsDB {
                 tokens_out: row.get::<_, Option<u64>>(7)?.unwrap_or(0),
                 cached: row.get::<_, Option<u64>>(8)?.unwrap_or(0),
                 cached_tokens,
+                cache_creation_tokens: row.get::<_, Option<u64>>(11)?.unwrap_or(0),
                 cache_hit_rate,
                 by_model: std::collections::BTreeMap::new(),
             });
@@ -194,7 +197,8 @@ impl StatsDB {
                 SUM(tokens_out) as tokens_out,
                 AVG(duration_ms) as avg_latency,
                 AVG(ttft_ms) as avg_ttft,
-                SUM(cached_tokens) as cached_tokens
+                SUM(cached_tokens) as cached_tokens,
+                SUM(cache_creation_tokens) as cache_creation_tokens
              FROM requests
              WHERE ts_ms >= ?",
         )?;
@@ -202,6 +206,7 @@ impl StatsDB {
         let row = stmt.query_row(params![start_ms], |row| {
             let tokens_in = row.get::<_, Option<u64>>(4)?.unwrap_or(0);
             let cached_tokens = row.get::<_, Option<u64>>(8)?.unwrap_or(0);
+            let cache_creation_tokens = row.get::<_, Option<u64>>(9)?.unwrap_or(0);
             let cache_hit_rate = if tokens_in > 0 {
                 cached_tokens as f64 / tokens_in as f64
             } else {
@@ -213,6 +218,7 @@ impl StatsDB {
                 throttled: row.get::<_, Option<u64>>(2)?.unwrap_or(0),
                 cached: row.get::<_, Option<u64>>(3)?.unwrap_or(0),
                 cached_tokens,
+                cache_creation_tokens,
                 cache_hit_rate,
                 tokens_in,
                 tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
@@ -277,8 +283,8 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
     {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO requests
-             (ts_ms, duration_ms, ttft_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached_tokens, cached, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             (ts_ms, duration_ms, ttft_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached_tokens, cache_creation_tokens, cached, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?;
         for rec in batch {
             stmt.execute(params![
@@ -292,6 +298,7 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
                 rec.tokens_in,
                 rec.tokens_out,
                 rec.cached_tokens as i64,
+                rec.cache_creation_tokens as i64,
                 rec.cached as i64,
                 rec.error.as_deref(),
             ])?;

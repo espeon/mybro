@@ -24,8 +24,10 @@ pub struct RequestRecord {
     pub key_name: String,
     pub tokens_in: u64,
     pub tokens_out: u64,
-    /// Number of input tokens that were served from upstream cache (prompt cache hits)
+    /// Number of input tokens that were served from upstream cache (cache hits)
     pub cached_tokens: u64,
+    /// Number of input tokens that were written to cache this request (cache warming)
+    pub cache_creation_tokens: u64,
     pub cached: bool,
     pub error: Option<String>,
 }
@@ -115,6 +117,7 @@ impl StatsCollector {
                 tokens_out: 0,
                 cached: 0,
                 cached_tokens: 0,
+                cache_creation_tokens: 0,
                 cache_hit_rate: 0.0,
                 by_model: BTreeMap::new(),
             })
@@ -145,7 +148,8 @@ impl StatsCollector {
             bucket.tokens_in += rec.tokens_in;
             bucket.tokens_out += rec.tokens_out;
             bucket.cached_tokens += rec.cached_tokens;
-            if rec.cached || rec.cached_tokens > 0 {
+            bucket.cache_creation_tokens += rec.cache_creation_tokens;
+            if rec.cached || rec.cached_tokens > 0 || rec.cache_creation_tokens > 0 {
                 bucket.cached += 1;
             }
 
@@ -267,6 +271,7 @@ impl StatsCollector {
             .count() as u64;
         let cached = relevant.iter().filter(|r| r.cached).count() as u64;
         let cached_tokens: u64 = relevant.iter().map(|r| r.cached_tokens).sum();
+        let cache_creation_tokens: u64 = relevant.iter().map(|r| r.cache_creation_tokens).sum();
         let tokens_in: u64 = relevant.iter().map(|r| r.tokens_in).sum();
         let tokens_out: u64 = relevant.iter().map(|r| r.tokens_out).sum();
         let cache_hit_rate = if tokens_in > 0 {
@@ -293,6 +298,7 @@ impl StatsCollector {
             throttled,
             cached,
             cached_tokens,
+            cache_creation_tokens,
             cache_hit_rate,
             tokens_in,
             tokens_out,
@@ -335,6 +341,7 @@ pub struct StatsBucket {
     pub tokens_out: u64,
     pub cached: u64,
     pub cached_tokens: u64,
+    pub cache_creation_tokens: u64,
     pub cache_hit_rate: f64,
     pub by_model: BTreeMap<String, ModelBucket>,
 }
@@ -354,6 +361,7 @@ pub struct StatsSummary {
     pub throttled: u64,
     pub cached: u64,
     pub cached_tokens: u64,
+    pub cache_creation_tokens: u64,
     pub cache_hit_rate: f64,
     pub tokens_in: u64,
     pub tokens_out: u64,

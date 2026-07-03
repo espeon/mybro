@@ -166,6 +166,7 @@ export interface StatsBucket {
   tokens_out: number
   cached: number
   cached_tokens: number
+  cache_creation_tokens: number
   cache_hit_rate: number
   by_model: Record<string, {
     count: number
@@ -181,6 +182,7 @@ export interface StatsSummary {
   throttled: number
   cached: number
   cached_tokens: number
+  cache_creation_tokens: number
   cache_hit_rate: number
   tokens_in: number
   tokens_out: number

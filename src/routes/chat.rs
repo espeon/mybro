@@ -194,6 +194,7 @@ pub async fn chat_completions(
                                 tokens_in: 0,
                                 tokens_out: 0,
                                 cached_tokens: 0,
+                                cache_creation_tokens: 0,
                                 cached: false,
                                 error: None,
                             },
@@ -232,8 +233,8 @@ pub async fn chat_completions(
                         let body = crate::upstream::read_body(resp).await.unwrap_or_default();
                         // Non-streaming: TTFT ≈ total duration
                         let dur = req_start.elapsed().as_millis() as u64;
-                        let cached_tokens = crate::usage_parse::extract_cached_tokens(&body);
-                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, cached_tokens, None);
+                        let cache_stats = crate::usage_parse::extract_cache_stats(&body);
+                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, cache_stats.cached, cache_stats.creation, None);
                         if is_stream {
                             return wrap_json_as_sse(body);
                         } else {
@@ -253,7 +254,7 @@ pub async fn chat_completions(
                         if status_u16 == 503 {
                             state.gate.bump_throttled();
                         }
-                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, Some(&last_error_body));
+                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, Some(&last_error_body));
                         return Response::builder()
                             .status(status)
                             .header(header::CONTENT_TYPE, "application/json")
@@ -267,7 +268,7 @@ pub async fn chat_completions(
                         state.gate.bump_throttled();
                     }
                     let body = crate::upstream::read_body(resp).await.unwrap_or_default();
-                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, None);
+                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, None);
                     let mut builder = Response::builder().status(status);
                     for (k, v) in &headers_clone {
                         builder = builder.header(k, v);
@@ -281,7 +282,7 @@ pub async fn chat_completions(
                 log_upstream_error(&state, attempt, session.sess_num, &current_slot.name, 502, &last_error_body);
 
                 if attempt == max_retries {
-                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, 0, Some(&last_error_body));
+                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, 0, 0, Some(&last_error_body));
                     return super::openai_error(
                         StatusCode::BAD_GATEWAY,
                         &format!("Upstream error: {}", e),
@@ -295,7 +296,7 @@ pub async fn chat_completions(
         }
     }
 
-    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, 0, Some("max retries exhausted"));
+    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, 0, 0, Some("max retries exhausted"));
     super::openai_error(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Max retries exhausted",
@@ -316,6 +317,7 @@ fn record_stat(
     pipeline: &'static str,
     key_name: &str,
     cached_tokens: u64,
+    cache_creation_tokens: u64,
     error: Option<&str>,
 ) {
     use crate::stats::RequestRecord;
@@ -333,7 +335,8 @@ fn record_stat(
         tokens_in: 0,
         tokens_out: 0,
         cached_tokens,
-        cached: cached_tokens > 0,
+        cache_creation_tokens,
+        cached: cached_tokens > 0 || cache_creation_tokens > 0,
         error: error.map(|s| s.to_string()),
     });
 }
