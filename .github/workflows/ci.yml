@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ── Rust backend: check, clippy, test, build ─────────────────────────────────
+  rust:
+    name: Rust backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: Create dist placeholder for rust-embed
+        run: mkdir -p uman-frontend/dist && touch uman-frontend/dist/index.html
+
+      - name: cargo check
+        working-directory: .
+        run: cargo check --all-targets
+
+      - name: cargo clippy
+        working-directory: .
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: false
+
+      - name: cargo test
+        working-directory: .
+        run: cargo test --all-targets
+
+      - name: cargo build (release)
+        working-directory: .
+        run: cargo build --release
+        env:
+          RUSTFLAGS: ""
+
+  # ── Frontend: install, typecheck, lint, build ──────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('uman-frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        working-directory: uman-frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: uman-frontend
+        run: pnpm typecheck
+
+      - name: Build
+        working-directory: uman-frontend
+        run: pnpm build
+
+  # ── Docker: validate the multi-stage build ─────────────────────────────────
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: [rust, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: umans-proxy:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  # ── Combined: final embedded binary build (after frontend assets exist) ────
+  embedded:
+    name: Embedded binary (release)
+    runs-on: ubuntu-latest
+    needs: [frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install frontend deps
+        working-directory: uman-frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: uman-frontend
+        run: pnpm build
+
+      - name: Build Rust with embedded assets
+        working-directory: .
+        run: cargo build --release
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uman-${{ runner.arch }}
+          path: target/release/uman

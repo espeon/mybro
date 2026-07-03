@@ -1,0 +1,7 @@
+target/
+uman-frontend/node_modules/
+uman-frontend/dist/
+.git/
+.config/
+.logs/
+.cache/

@@ -1,0 +1,40 @@
+[package]
+name = "uman"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http2", "webpki-roots", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+arc-swap = "1"
+parking_lot = "0.12"
+sha2 = "0.10"
+md-5 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+http-body-util = "0.1"
+tower = "0.5"
+rust-embed = "8"
+mime_guess = "2"
+lru = "0.12"
+subtle = "2"
+futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+base64 = "0.22"
+async-stream = "0.3"
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+# OpenTelemetry
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["trace", "metrics", "http-proto", "reqwest-client"] }

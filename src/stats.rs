@@ -1,0 +1,337 @@
+// ── In-memory time-series request stats ──────────────────────────────────────
+//
+// Records per-request data into a ring buffer, then aggregates into time
+// buckets for the dashboard. No external storage — this is for the live
+// "last N minutes" view, like a mini-Grafana.
+
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
+use tokio::sync::mpsc;
+
+// ── Per-request record ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RequestRecord {
+    pub ts_ms: u64,
+    pub duration_ms: u64,
+    pub status: u16,
+    pub model: String,
+    pub pipeline: &'static str, // "openai" | "anthropic"
+    pub key_name: String,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub cached: bool,
+    pub error: Option<String>,
+}
+
+// ── Ring buffer ──────────────────────────────────────────────────────────────
+
+const DEFAULT_MAX_RECORDS: usize = 10_000;
+
+pub struct StatsCollector {
+    records: Mutex<VecDeque<RequestRecord>>,
+    max_records: usize,
+    db_sender: Option<mpsc::Sender<RequestRecord>>,
+    db: Option<Arc<crate::db::StatsDB>>,
+}
+
+/// Windows shorter than this use the in-memory buffer; longer windows query SQLite.
+const MEMORY_WINDOW_MS: u64 = 5 * 60 * 1000; // 5 minutes
+
+impl StatsCollector {
+    pub fn new() -> Self {
+        Self::with_capacity(DEFAULT_MAX_RECORDS)
+    }
+
+    pub fn with_capacity(max: usize) -> Self {
+        Self {
+            records: Mutex::new(VecDeque::with_capacity(max)),
+            max_records: max,
+            db_sender: None,
+            db: None,
+        }
+    }
+
+    pub fn with_db(db: Arc<crate::db::StatsDB>) -> Self {
+        Self {
+            records: Mutex::new(VecDeque::with_capacity(DEFAULT_MAX_RECORDS)),
+            max_records: DEFAULT_MAX_RECORDS,
+            db_sender: Some(db.sender()),
+            db: Some(db),
+        }
+    }
+
+    pub fn record(&self, rec: RequestRecord) {
+        // Persist to SQLite asynchronously
+        if let Some(sender) = &self.db_sender {
+            let _ = sender.try_send(rec.clone());
+        }
+        let mut records = self.records.lock();
+        if records.len() >= self.max_records {
+            records.pop_front();
+        }
+        records.push_back(rec);
+    }
+
+    /// Aggregate into time buckets of `bucket_ms` duration, covering the last
+    /// `window_ms` of data. Returns buckets oldest→newest. Two-pass: first
+    /// counts/sums, then collects latencies per bucket for percentiles.
+    pub fn buckets(&self, window_ms: u64, bucket_ms: u64) -> Vec<StatsBucket> {
+        // Use SQLite for windows longer than memory coverage, or if no DB just use memory
+        if let Some(db) = &self.db {
+            if window_ms > MEMORY_WINDOW_MS {
+                match db.query_buckets(window_ms, bucket_ms) {
+                    Ok(buckets) => return buckets,
+                    Err(e) => tracing::warn!("stats db query failed: {}", e),
+                }
+            }
+        }
+        let records = self.records.lock();
+        let now_ms = now_millis();
+        let start_ms = now_ms.saturating_sub(window_ms);
+        let num_buckets = ((window_ms / bucket_ms).max(1)) as usize;
+
+        // Initialize empty buckets
+        let mut buckets: Vec<StatsBucket> = (0..num_buckets)
+            .map(|i| StatsBucket {
+                ts_ms: start_ms + (i as u64) * bucket_ms,
+                count: 0,
+                errors: 0,
+                throttled: 0,
+                avg_latency_ms: 0.0,
+                p50_latency_ms: 0.0,
+                p95_latency_ms: 0.0,
+                max_latency_ms: 0,
+                tokens_in: 0,
+                tokens_out: 0,
+                cached: 0,
+                by_model: BTreeMap::new(),
+            })
+            .collect();
+
+        // Latencies collected per bucket for percentile computation
+        let mut latencies_per_bucket: Vec<Vec<u64>> = vec![Vec::new(); num_buckets];
+
+        // Single pass over records
+        for rec in records.iter() {
+            if rec.ts_ms < start_ms || rec.ts_ms > now_ms {
+                continue;
+            }
+            let bi = ((rec.ts_ms - start_ms) / bucket_ms) as usize;
+            if bi >= num_buckets {
+                continue;
+            }
+            let bucket = &mut buckets[bi];
+            bucket.count += 1;
+            if rec.status >= 400 {
+                bucket.errors += 1;
+            }
+            if rec.status == 429 || rec.status == 503 {
+                bucket.throttled += 1;
+            }
+            bucket.max_latency_ms = bucket.max_latency_ms.max(rec.duration_ms);
+            bucket.tokens_in += rec.tokens_in;
+            bucket.tokens_out += rec.tokens_out;
+            if rec.cached {
+                bucket.cached += 1;
+            }
+
+            let model_entry = bucket
+                .by_model
+                .entry(rec.model.clone())
+                .or_default();
+            model_entry.count += 1;
+            model_entry.latency_sum_ms += rec.duration_ms;
+            model_entry.tokens_in += rec.tokens_in;
+            model_entry.tokens_out += rec.tokens_out;
+
+            latencies_per_bucket[bi].push(rec.duration_ms);
+        }
+
+        // Compute averages and percentiles
+        for (i, bucket) in buckets.iter_mut().enumerate() {
+            if bucket.count == 0 {
+                continue;
+            }
+            let lats = &latencies_per_bucket[i];
+            let sum: u64 = lats.iter().sum();
+            bucket.avg_latency_ms = sum as f64 / lats.len() as f64;
+
+            let mut sorted = lats.clone();
+            sorted.sort_unstable();
+            bucket.p50_latency_ms = percentile(&sorted, 50.0);
+            bucket.p95_latency_ms = percentile(&sorted, 95.0);
+        }
+
+        buckets
+    }
+
+    /// Get recent raw records (for a table view), newest first.
+    pub fn recent(&self, limit: usize) -> Vec<RequestRecord> {
+        let records = self.records.lock();
+        records.iter().rev().take(limit).cloned().collect()
+    }
+
+    /// Summary stats for the last `window_ms`.
+    pub fn token_stats(&self, window_ms: u64) -> Vec<crate::db::TokenSummary> {
+        if let Some(db) = &self.db {
+            match db.query_token_stats(window_ms) {
+                Ok(tokens) => return tokens,
+                Err(e) => tracing::warn!("token stats query failed: {}", e),
+            }
+        }
+        // Fallback: in-memory aggregation
+        let records = self.records.lock();
+        let now_ms = now_millis();
+        let start_ms = now_ms.saturating_sub(window_ms);
+        let mut by_key: std::collections::BTreeMap<String, crate::db::TokenSummary> =
+            std::collections::BTreeMap::new();
+        for r in records.iter().filter(|r| r.ts_ms >= start_ms) {
+            let e = by_key.entry(r.key_name.clone()).or_insert_with(|| {
+                crate::db::TokenSummary {
+                    key_name: r.key_name.clone(),
+                    count: 0,
+                    errors: 0,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    avg_latency_ms: 0.0,
+                }
+            });
+            e.count += 1;
+            if r.status >= 400 {
+                e.errors += 1;
+            }
+            e.tokens_in += r.tokens_in;
+            e.tokens_out += r.tokens_out;
+        }
+        for e in by_key.values_mut() {
+            e.avg_latency_ms = 0.0;
+        }
+        by_key.into_values().collect()
+    }
+
+    pub fn summary(&self, window_ms: u64) -> StatsSummary {
+        if let Some(db) = &self.db {
+            if window_ms > MEMORY_WINDOW_MS {
+                match db.query_summary(window_ms) {
+                    Ok(summary) => return summary,
+                    Err(e) => tracing::warn!("stats db summary failed: {}", e),
+                }
+            }
+        }
+        let records = self.records.lock();
+        let now_ms = now_millis();
+        let start_ms = now_ms.saturating_sub(window_ms);
+
+        let relevant: Vec<&RequestRecord> = records
+            .iter()
+            .filter(|r| r.ts_ms >= start_ms)
+            .collect();
+
+        let count = relevant.len() as u64;
+        let errors = relevant.iter().filter(|r| r.status >= 400).count() as u64;
+        let throttled = relevant
+            .iter()
+            .filter(|r| r.status == 429 || r.status == 503)
+            .count() as u64;
+        let cached = relevant.iter().filter(|r| r.cached).count() as u64;
+        let tokens_in = relevant.iter().map(|r| r.tokens_in).sum();
+        let tokens_out = relevant.iter().map(|r| r.tokens_out).sum();
+        let avg_latency = if count > 0 {
+            relevant.iter().map(|r| r.duration_ms).sum::<u64>() as f64 / count as f64
+        } else {
+            0.0
+        };
+
+        StatsSummary {
+            count,
+            errors,
+            throttled,
+            cached,
+            tokens_in,
+            tokens_out,
+            avg_latency_ms: avg_latency,
+        }
+    }
+}
+
+impl Default for StatsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn percentile(sorted: &[u64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((p / 100.0) * (sorted.len() as f64 - 1.0)).round() as usize;
+    sorted[idx.min(sorted.len() - 1)] as f64
+}
+
+// ── Bucket types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StatsBucket {
+    pub ts_ms: u64,
+    pub count: u64,
+    pub errors: u64,
+    pub throttled: u64,
+    pub avg_latency_ms: f64,
+    pub p50_latency_ms: f64,
+    pub p95_latency_ms: f64,
+    pub max_latency_ms: u64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub cached: u64,
+    pub by_model: BTreeMap<String, ModelBucket>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ModelBucket {
+    pub count: u64,
+    pub latency_sum_ms: u64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StatsSummary {
+    pub count: u64,
+    pub errors: u64,
+    pub throttled: u64,
+    pub cached: u64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub avg_latency_ms: f64,
+}
+
+// ── Query params ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct StatsQuery {
+    #[serde(default = "default_window")]
+    pub window: u64,       // seconds
+    #[serde(default = "default_bucket")]
+    pub bucket: u64,       // seconds
+    #[serde(default = "default_mode")]
+    pub mode: String,      // "buckets" | "summary" | "recent"
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+fn default_window() -> u64 { 300 }
+fn default_bucket() -> u64 { 10 }
+fn default_mode() -> String { "buckets".to_string() }
+fn default_limit() -> usize { 100 }
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
