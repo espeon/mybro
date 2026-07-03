@@ -19,6 +19,7 @@ arc-swap = "1"
 parking_lot = "0.12"
 sha2 = "0.10"
 md-5 = "0.10"
+
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 http-body-util = "0.1"
@@ -39,3 +40,13 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", default-features = false, features = ["trace", "metrics", "http-proto", "reqwest-client"] }
+
+# ── Build profiles ──────────────────────────────────────────────────────────
+# Size-optimized release: ~50% smaller binary, slightly slower (irrelevant
+# for a network-bound proxy). Use: cargo build --release
+[profile.release]
+opt-level = "z"          # optimize for binary size
+lto = "fat"              # link-time optimization across all crates
+codegen-units = 1        # single codegen unit for better optimization
+strip = true             # strip symbols from binary
+panic = "abort"          # smaller panic handler

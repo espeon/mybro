@@ -11,6 +11,7 @@ import {
 import { api, type StatsResponse } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import type { ValueType } from "recharts/types/component/DefaultTooltipContent"
 
 const WINDOW_OPTIONS = [
   { label: "5m", value: 300 },
@@ -33,7 +34,16 @@ export function StatsChart() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const bucket = window <= 300 ? 10 : window <= 900 ? 30 : window <= 3600 ? 60 : window <= 21600 ? 600 : 3600
+      const bucket =
+        window <= 300
+          ? 10
+          : window <= 900
+            ? 30
+            : window <= 3600
+              ? 60
+              : window <= 21600
+                ? 600
+                : 3600
       const d = await api.getStats(window, bucket)
       setData(d)
     } catch (e) {
@@ -67,11 +77,34 @@ export function StatsChart() {
     }
   })
 
-  const metricConfig: Record<Metric, { key: string; label: string; color: string; format: (v: number) => string }> = {
-    count: { key: "count", label: "Requests", color: "#10b981", format: (v) => v.toString() },
-    latency: { key: "latency", label: "Latency p95", color: "#f59e0b", format: (v) => `${Math.round(v)}ms` },
-    errors: { key: "errors", label: "Errors", color: "#ef4444", format: (v) => v.toString() },
-    tokens: { key: "tokens", label: "Tokens", color: "#06b6d4", format: (v) => (v > 1000 ? `${(v / 1000).toFixed(1)}k` : v.toString()) },
+  const metricConfig: Record<
+    Metric,
+    { key: string; label: string; color: string; format: (v: number) => string }
+  > = {
+    count: {
+      key: "count",
+      label: "Requests",
+      color: "#10b981",
+      format: (v) => v.toString(),
+    },
+    latency: {
+      key: "latency",
+      label: "Latency p95",
+      color: "#f59e0b",
+      format: (v) => `${Math.round(v)}ms`,
+    },
+    errors: {
+      key: "errors",
+      label: "Errors",
+      color: "#ef4444",
+      format: (v) => v.toString(),
+    },
+    tokens: {
+      key: "tokens",
+      label: "Tokens",
+      color: "#06b6d4",
+      format: (v) => (v > 1000 ? `${(v / 1000).toFixed(1)}k` : v.toString()),
+    },
   }
 
   const cfg = metricConfig[metric]
@@ -111,7 +144,9 @@ export function StatsChart() {
       </CardHeader>
       <CardContent>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {!data && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
+        {!data && !error && (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        )}
 
         {data && (
           <div className="space-y-3">
@@ -119,24 +154,34 @@ export function StatsChart() {
             <div className="flex flex-wrap gap-3 text-xs">
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total:</span>
-                <span className="font-mono font-medium">{summary?.count ?? 0}</span>
+                <span className="font-mono font-medium">
+                  {summary?.count ?? 0}
+                </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Errors:</span>
-                <span className="font-mono font-medium text-destructive">{summary?.errors ?? 0}</span>
+                <span className="font-mono font-medium text-destructive">
+                  {summary?.errors ?? 0}
+                </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Throttled:</span>
-                <span className="font-mono font-medium">{summary?.throttled ?? 0}</span>
+                <span className="font-mono font-medium">
+                  {summary?.throttled ?? 0}
+                </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Avg latency:</span>
-                <span className="font-mono font-medium">{Math.round(summary?.avg_latency_ms ?? 0)}ms</span>
+                <span className="font-mono font-medium">
+                  {Math.round(summary?.avg_latency_ms ?? 0)}ms
+                </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Tokens:</span>
                 <span className="font-mono font-medium">
-                  {((summary?.tokens_in ?? 0) + (summary?.tokens_out ?? 0)).toLocaleString()}
+                  {(
+                    (summary?.tokens_in ?? 0) + (summary?.tokens_out ?? 0)
+                  ).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -144,14 +189,35 @@ export function StatsChart() {
             {/* Recharts area chart */}
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                >
                   <defs>
-                    <linearGradient id={`gradient-${metric}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={cfg.color} stopOpacity={0.4} />
-                      <stop offset="95%" stopColor={cfg.color} stopOpacity={0} />
+                    <linearGradient
+                      id={`gradient-${metric}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor={cfg.color}
+                        stopOpacity={0.4}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={cfg.color}
+                        stopOpacity={0}
+                      />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#374151"
+                    opacity={0.3}
+                  />
                   <XAxis
                     dataKey="label"
                     tick={{ fontSize: 10, fill: "#9ca3af" }}
@@ -172,7 +238,10 @@ export function StatsChart() {
                       fontSize: "12px",
                     }}
                     labelStyle={{ color: "#f3f4f6" }}
-                    formatter={(value: number) => [cfg.format(value), cfg.label]}
+                    formatter={(value: ValueType | undefined) => [
+                      cfg.format(Number(value ?? 0)),
+                      cfg.label,
+                    ]}
                   />
                   <Area
                     type="monotone"
@@ -186,7 +255,7 @@ export function StatsChart() {
             </div>
 
             {chartData.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
+              <p className="py-4 text-center text-sm text-muted-foreground">
                 No data in this time window
               </p>
             )}

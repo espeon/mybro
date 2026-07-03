@@ -1,0 +1,51 @@
+# ── Stage 1: Build frontend ───────────────────────────────────────────────────
+FROM node:22-alpine AS frontend
+
+WORKDIR /app/uman-frontend
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY uman-frontend/package.json uman-frontend/pnpm-lock.yaml uman-frontend/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY uman-frontend/ ./
+RUN pnpm build
+
+# ── Stage 2: Build Rust binary with musl for static linking ──────────────────
+FROM rust:1-alpine AS backend
+
+# Install musl tools for fully static binary
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev
+
+WORKDIR /app
+
+# Cache dependencies
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
+    cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null || true
+
+# Copy source + frontend dist (rust-embed needs dist/ at compile time)
+COPY src/ ./src/
+COPY --from=frontend /app/uman-frontend/dist/ ./uman-frontend/dist/
+
+RUN cargo build --release --target x86_64-unknown-linux-musl
+
+# ── Stage 3: Minimal runtime (~5MB) ──────────────────────────────────────────
+# scratch has nothing — but we need ca-certificates for TLS to upstream
+FROM scratch
+
+# ca-certificates from alpine for HTTPS to UMANS API
+COPY --from=backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Static musl binary (~15-25MB)
+COPY --from=backend /app/target/x86_64-unknown-linux-musl/release/mybro /mybro
+
+# /tmp is needed for error logs and SQLite temp files
+VOLUME ["/tmp"]
+
+EXPOSE 8084
+
+ENV LISTEN_ADDR=0.0.0.0:8084 \
+    HOME=/tmp
+
+ENTRYPOINT ["/mybro"]
