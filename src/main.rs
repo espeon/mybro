@@ -22,6 +22,7 @@ mod sessions;
 mod stats;
 mod upstream;
 mod usage;
+mod usage_parse;
 mod vision;
 
 use std::sync::Arc;

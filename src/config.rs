@@ -52,6 +52,12 @@ pub struct Config {
     #[serde(rename = "REQUEST_TIMEOUT", default = "default_request_timeout")]
     pub request_timeout: String,
 
+    /// Web search provider for the upstream ("native", "exa", or "none").
+    /// Set to "none" to disable server-side web search by default.
+    /// Per-request override: clients can send X-Umans-Websearch-Provider.
+    #[serde(rename = "WEBSEARCH_PROVIDER", default = "default_websearch")]
+    pub websearch_provider: String,
+
     #[serde(rename = "API_KEY", default)]
     pub api_key: String,
 
@@ -104,6 +110,9 @@ fn default_upstream() -> String {
 fn default_request_timeout() -> String {
     "15m".to_string()
 }
+fn default_websearch() -> String {
+    "none".to_string()
+}
 fn default_max_images() -> usize {
     9
 }
@@ -120,6 +129,7 @@ impl Default for Config {
             listen_addr: default_listen_addr(),
             upstream_base_url: default_upstream(),
             request_timeout: default_request_timeout(),
+            websearch_provider: default_websearch(),
             api_key: String::new(),
             api_keys: Vec::new(),
             keys: Vec::new(),
@@ -171,6 +181,9 @@ impl Config {
         }
         if let Ok(v) = std::env::var("REQUEST_TIMEOUT") {
             self.request_timeout = v;
+        }
+        if let Ok(v) = std::env::var("WEBSEARCH_PROVIDER") {
+            self.websearch_provider = v;
         }
         if let Ok(v) = std::env::var("UMANS_API_KEY") {
             self.api_key = v;

@@ -165,6 +165,8 @@ export interface StatsBucket {
   tokens_in: number
   tokens_out: number
   cached: number
+  cached_tokens: number
+  cache_hit_rate: number
   by_model: Record<string, {
     count: number
     latency_sum_ms: number
@@ -178,6 +180,8 @@ export interface StatsSummary {
   errors: number
   throttled: number
   cached: number
+  cached_tokens: number
+  cache_hit_rate: number
   tokens_in: number
   tokens_out: number
   avg_latency_ms: number

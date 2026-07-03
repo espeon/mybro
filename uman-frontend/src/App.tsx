@@ -4,7 +4,9 @@ import { ModelsCard } from "@/components/models-card"
 import { StatsCards } from "@/components/stats-cards"
 import { StatsChart } from "@/components/stats-chart"
 import { TokenStatsCard } from "@/components/token-stats-card"
+import { CacheCard } from "@/components/cache-card"
 import { LoginPage } from "@/components/login-page"
+import { useStatsSummary } from "@/hooks/use-stats-summary"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { useEffect, useState } from "react"
@@ -81,6 +83,8 @@ function Dashboard({
   onLogout: () => void
   onRestart: () => void
 }) {
+  const { summary } = useStatsSummary(3600)
+
   return (
     <div className="min-h-svh bg-background p-4 md:p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -117,16 +121,19 @@ function Dashboard({
         {/* Time-series chart */}
         <StatsChart />
 
-        {/* Cards */}
+        {/* Cache + Health row */}
         <div className="grid gap-4 md:grid-cols-2">
+          <CacheCard summary={summary} />
           <HealthCard />
-          <KeysCard />
         </div>
 
+        {/* Cards */}
         <div className="grid gap-4 md:grid-cols-2">
-          <ModelsCard />
+          <KeysCard />
           <TokenStatsCard />
         </div>
+
+        <ModelsCard />
       </div>
     </div>
   )

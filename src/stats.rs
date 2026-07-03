@@ -24,6 +24,8 @@ pub struct RequestRecord {
     pub key_name: String,
     pub tokens_in: u64,
     pub tokens_out: u64,
+    /// Number of input tokens that were served from upstream cache (prompt cache hits)
+    pub cached_tokens: u64,
     pub cached: bool,
     pub error: Option<String>,
 }
@@ -112,6 +114,8 @@ impl StatsCollector {
                 tokens_in: 0,
                 tokens_out: 0,
                 cached: 0,
+                cached_tokens: 0,
+                cache_hit_rate: 0.0,
                 by_model: BTreeMap::new(),
             })
             .collect();
@@ -140,7 +144,8 @@ impl StatsCollector {
             bucket.max_latency_ms = bucket.max_latency_ms.max(rec.duration_ms);
             bucket.tokens_in += rec.tokens_in;
             bucket.tokens_out += rec.tokens_out;
-            if rec.cached {
+            bucket.cached_tokens += rec.cached_tokens;
+            if rec.cached || rec.cached_tokens > 0 {
                 bucket.cached += 1;
             }
 
@@ -181,6 +186,11 @@ impl StatsCollector {
                 t_sorted.sort_unstable();
                 bucket.p50_ttft_ms = percentile(&t_sorted, 50.0);
                 bucket.p95_ttft_ms = percentile(&t_sorted, 95.0);
+            }
+
+            // Cache hit rate: fraction of input tokens that were cache hits
+            if bucket.tokens_in > 0 {
+                bucket.cache_hit_rate = bucket.cached_tokens as f64 / bucket.tokens_in as f64;
             }
         }
 
@@ -256,8 +266,14 @@ impl StatsCollector {
             .filter(|r| r.status == 429 || r.status == 503)
             .count() as u64;
         let cached = relevant.iter().filter(|r| r.cached).count() as u64;
-        let tokens_in = relevant.iter().map(|r| r.tokens_in).sum();
-        let tokens_out = relevant.iter().map(|r| r.tokens_out).sum();
+        let cached_tokens: u64 = relevant.iter().map(|r| r.cached_tokens).sum();
+        let tokens_in: u64 = relevant.iter().map(|r| r.tokens_in).sum();
+        let tokens_out: u64 = relevant.iter().map(|r| r.tokens_out).sum();
+        let cache_hit_rate = if tokens_in > 0 {
+            cached_tokens as f64 / tokens_in as f64
+        } else {
+            0.0
+        };
         let avg_latency = if count > 0 {
             relevant.iter().map(|r| r.duration_ms).sum::<u64>() as f64 / count as f64
         } else {
@@ -276,6 +292,8 @@ impl StatsCollector {
             errors,
             throttled,
             cached,
+            cached_tokens,
+            cache_hit_rate,
             tokens_in,
             tokens_out,
             avg_latency_ms: avg_latency,
@@ -316,6 +334,8 @@ pub struct StatsBucket {
     pub tokens_in: u64,
     pub tokens_out: u64,
     pub cached: u64,
+    pub cached_tokens: u64,
+    pub cache_hit_rate: f64,
     pub by_model: BTreeMap<String, ModelBucket>,
 }
 
@@ -333,6 +353,8 @@ pub struct StatsSummary {
     pub errors: u64,
     pub throttled: u64,
     pub cached: u64,
+    pub cached_tokens: u64,
+    pub cache_hit_rate: f64,
     pub tokens_in: u64,
     pub tokens_out: u64,
     pub avg_latency_ms: f64,

@@ -81,6 +81,7 @@ impl Upstream {
         key: &str,
         body: Bytes,
         stream: bool,
+        websearch_provider: &str,
     ) -> Result<reqwest::Response, UpstreamError> {
         let url = self.build_url("/chat/completions");
         let mut headers = HeaderMap::new();
@@ -96,6 +97,11 @@ impl Upstream {
                 "application/json"
             }),
         );
+        if !websearch_provider.is_empty() {
+            if let Ok(v) = HeaderValue::from_str(websearch_provider) {
+                headers.insert("X-Umans-Websearch-Provider", v);
+            }
+        }
         self.do_request(Method::POST, &url, key, Some(headers), Some(body), None)
             .await
     }
@@ -105,6 +111,7 @@ impl Upstream {
         key: &str,
         body: Bytes,
         stream: bool,
+        websearch_provider: &str,
     ) -> Result<reqwest::Response, UpstreamError> {
         let url = self.build_url("/messages");
         let mut headers = HeaderMap::new();
@@ -120,6 +127,11 @@ impl Upstream {
                 "application/json"
             }),
         );
+        if !websearch_provider.is_empty() {
+            if let Ok(v) = HeaderValue::from_str(websearch_provider) {
+                headers.insert("X-Umans-Websearch-Provider", v);
+            }
+        }
         self.do_request(Method::POST, &url, key, Some(headers), Some(body), None)
             .await
     }

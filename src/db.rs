@@ -46,6 +46,7 @@ impl StatsDB {
                  key_name TEXT NOT NULL,
                  tokens_in INTEGER NOT NULL,
                  tokens_out INTEGER NOT NULL,
+                 cached_tokens INTEGER NOT NULL DEFAULT 0,
                  cached INTEGER NOT NULL,
                  error TEXT
              );
@@ -138,6 +139,7 @@ impl StatsDB {
                 SUM(tokens_in) as tokens_in,
                 SUM(tokens_out) as tokens_out,
                 SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                SUM(cached_tokens) as cached_tokens,
                 AVG(ttft_ms) as avg_ttft
              FROM requests
              WHERE ts_ms >= ?
@@ -148,6 +150,13 @@ impl StatsDB {
         let mut rows = stmt.query(params![bucket_ms, bucket_ms, start_ms])?;
         let mut buckets = Vec::new();
         while let Some(row) = rows.next()? {
+            let tokens_in = row.get::<_, Option<u64>>(6)?.unwrap_or(0);
+            let cached_tokens = row.get::<_, Option<u64>>(10)?.unwrap_or(0);
+            let cache_hit_rate = if tokens_in > 0 {
+                cached_tokens as f64 / tokens_in as f64
+            } else {
+                0.0
+            };
             buckets.push(crate::stats::StatsBucket {
                 ts_ms: row.get(0)?,
                 count: row.get(1)?,
@@ -160,9 +169,11 @@ impl StatsDB {
                 avg_ttft_ms: row.get::<_, Option<f64>>(9)?.unwrap_or(0.0),
                 p50_ttft_ms: 0.0,
                 p95_ttft_ms: 0.0,
-                tokens_in: row.get::<_, Option<u64>>(6)?.unwrap_or(0),
+                tokens_in,
                 tokens_out: row.get::<_, Option<u64>>(7)?.unwrap_or(0),
                 cached: row.get::<_, Option<u64>>(8)?.unwrap_or(0),
+                cached_tokens,
+                cache_hit_rate,
                 by_model: std::collections::BTreeMap::new(),
             });
         }
@@ -182,18 +193,28 @@ impl StatsDB {
                 SUM(tokens_in) as tokens_in,
                 SUM(tokens_out) as tokens_out,
                 AVG(duration_ms) as avg_latency,
-                AVG(ttft_ms) as avg_ttft
+                AVG(ttft_ms) as avg_ttft,
+                SUM(cached_tokens) as cached_tokens
              FROM requests
              WHERE ts_ms >= ?",
         )?;
 
         let row = stmt.query_row(params![start_ms], |row| {
+            let tokens_in = row.get::<_, Option<u64>>(4)?.unwrap_or(0);
+            let cached_tokens = row.get::<_, Option<u64>>(8)?.unwrap_or(0);
+            let cache_hit_rate = if tokens_in > 0 {
+                cached_tokens as f64 / tokens_in as f64
+            } else {
+                0.0
+            };
             Ok(crate::stats::StatsSummary {
                 count: row.get::<_, Option<u64>>(0)?.unwrap_or(0),
                 errors: row.get::<_, Option<u64>>(1)?.unwrap_or(0),
                 throttled: row.get::<_, Option<u64>>(2)?.unwrap_or(0),
                 cached: row.get::<_, Option<u64>>(3)?.unwrap_or(0),
-                tokens_in: row.get::<_, Option<u64>>(4)?.unwrap_or(0),
+                cached_tokens,
+                cache_hit_rate,
+                tokens_in,
                 tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
                 avg_latency_ms: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
                 avg_ttft_ms: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
@@ -256,8 +277,8 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
     {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO requests
-             (ts_ms, duration_ms, ttft_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             (ts_ms, duration_ms, ttft_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached_tokens, cached, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )?;
         for rec in batch {
             stmt.execute(params![
@@ -270,6 +291,7 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
                 rec.key_name,
                 rec.tokens_in,
                 rec.tokens_out,
+                rec.cached_tokens as i64,
                 rec.cached as i64,
                 rec.error.as_deref(),
             ])?;

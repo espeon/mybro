@@ -149,9 +149,15 @@ pub async fn chat_completions(
         }
 
         let body_clone = body_bytes.clone();
+        // Resolve the websearch_provider: client header overrides, else config default
+        let websearch = headers
+            .get("x-umans-websearch-provider")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| cfg.websearch_provider.clone());
         let result = state
             .upstream
-            .chat_completions(&current_slot.key, body_clone, is_stream)
+            .chat_completions(&current_slot.key, body_clone, is_stream, &websearch)
             .await;
 
         match result {
@@ -187,6 +193,7 @@ pub async fn chat_completions(
                                 key_name: current_slot.name.to_string(),
                                 tokens_in: 0,
                                 tokens_out: 0,
+                                cached_tokens: 0,
                                 cached: false,
                                 error: None,
                             },
@@ -225,7 +232,8 @@ pub async fn chat_completions(
                         let body = crate::upstream::read_body(resp).await.unwrap_or_default();
                         // Non-streaming: TTFT ≈ total duration
                         let dur = req_start.elapsed().as_millis() as u64;
-                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, None);
+                        let cached_tokens = crate::usage_parse::extract_cached_tokens(&body);
+                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, cached_tokens, None);
                         if is_stream {
                             return wrap_json_as_sse(body);
                         } else {
@@ -245,7 +253,7 @@ pub async fn chat_completions(
                         if status_u16 == 503 {
                             state.gate.bump_throttled();
                         }
-                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, Some(&last_error_body));
+                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, Some(&last_error_body));
                         return Response::builder()
                             .status(status)
                             .header(header::CONTENT_TYPE, "application/json")
@@ -259,7 +267,7 @@ pub async fn chat_completions(
                         state.gate.bump_throttled();
                     }
                     let body = crate::upstream::read_body(resp).await.unwrap_or_default();
-                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, None);
+                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, None);
                     let mut builder = Response::builder().status(status);
                     for (k, v) in &headers_clone {
                         builder = builder.header(k, v);
@@ -273,7 +281,7 @@ pub async fn chat_completions(
                 log_upstream_error(&state, attempt, session.sess_num, &current_slot.name, 502, &last_error_body);
 
                 if attempt == max_retries {
-                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, Some(&last_error_body));
+                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, 0, Some(&last_error_body));
                     return super::openai_error(
                         StatusCode::BAD_GATEWAY,
                         &format!("Upstream error: {}", e),
@@ -287,7 +295,7 @@ pub async fn chat_completions(
         }
     }
 
-    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, Some("max retries exhausted"));
+    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, 0, Some("max retries exhausted"));
     super::openai_error(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Max retries exhausted",
@@ -307,6 +315,7 @@ fn record_stat(
     model: &str,
     pipeline: &'static str,
     key_name: &str,
+    cached_tokens: u64,
     error: Option<&str>,
 ) {
     use crate::stats::RequestRecord;
@@ -323,7 +332,8 @@ fn record_stat(
         key_name: key_name.to_string(),
         tokens_in: 0,
         tokens_out: 0,
-        cached: false,
+        cached_tokens,
+        cached: cached_tokens > 0,
         error: error.map(|s| s.to_string()),
     });
 }

@@ -134,9 +134,15 @@ pub async fn messages(
 
     // 12. Upstream call (no retry loop)
     let req_start = std::time::Instant::now();
+    // Resolve websearch_provider: client header overrides, else config default
+    let websearch = headers
+        .get("x-umans-websearch-provider")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| cfg.websearch_provider.clone());
     let result = state
         .upstream
-        .messages(&slot.key, body_bytes, is_stream)
+        .messages(&slot.key, body_bytes, is_stream, &websearch)
         .await;
 
     match result {
@@ -162,6 +168,7 @@ pub async fn messages(
                         key_name: slot.name.to_string(),
                         tokens_in: 0,
                         tokens_out: 0,
+                        cached_tokens: 0,
                         cached: false,
                         error: None,
                     },
@@ -212,7 +219,7 @@ pub async fn messages(
                     state.gate.bump_throttled();
                 }
 
-                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, Some(&error_body));
+                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, 0, Some(&error_body));
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {
@@ -230,7 +237,7 @@ pub async fn messages(
         Err(e) => {
             state.keypool.mark_unhealthy(slot.index, 502);
             log_upstream_error(&state, 1, session.sess_num, &slot.name, 502, &e.to_string());
-            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, Some(&e.to_string()));
+            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, 0, Some(&e.to_string()));
             super::anthropic_error(
                 StatusCode::BAD_GATEWAY,
                 &format!("Upstream error: {}", e),
@@ -251,6 +258,7 @@ fn record_stat(
     model: &str,
     pipeline: &'static str,
     key_name: &str,
+    cached_tokens: u64,
     error: Option<&str>,
 ) {
     use crate::stats::RequestRecord;
@@ -267,7 +275,8 @@ fn record_stat(
         key_name: key_name.to_string(),
         tokens_in: 0,
         tokens_out: 0,
-        cached: false,
+        cached_tokens,
+        cached: cached_tokens > 0,
         error: error.map(|s| s.to_string()),
     });
 }

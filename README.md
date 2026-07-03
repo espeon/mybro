@@ -57,6 +57,7 @@ missing):
   "LISTEN_ADDR": "127.0.0.1:8084",
   "UPSTREAM_BASE_URL": "https://api.code.umans.ai/v1",
   "REQUEST_TIMEOUT": "15m",
+  "WEBSEARCH_PROVIDER": "none",
   "API_KEY": "sk-your-umans-key",
   "KEYS": [
     { "name": "Primary", "key": "sk-...", "session": "" }
@@ -84,7 +85,7 @@ mybro
 Supports: `LISTEN_ADDR`, `UPSTREAM_BASE_URL`, `REQUEST_TIMEOUT`,
 `UMANS_API_KEY`, `API_KEYS`, `OVERRIDE_CONCURRENCY`, `MAX_IMAGES`,
 `VISION_HANDOFF_ENABLED`, `VISION_HANDOFF_CACHE_ENABLED`,
-`VISION_HANDOFF_CACHE_TTL`, `OTEL_EXPORTER_OTLP_ENDPOINT`.
+`VISION_HANDOFF_CACHE_TTL`, `WEBSEARCH_PROVIDER`, `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 ### 3. CLI flags
 

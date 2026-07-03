@@ -194,7 +194,7 @@ async fn analyze_image(
     });
     let body_bytes = serde_json::to_vec(&body).unwrap_or_default().into();
 
-    match upstream.chat_completions(key, body_bytes, false).await {
+    match upstream.chat_completions(key, body_bytes, false, "none").await {
         Ok(resp) => {
             if !resp.status().is_success() {
                 return format!("[Image analysis failed: HTTP {}]", resp.status());
