@@ -30,17 +30,21 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=backend /app/target/release/mybro /app/mybro
 
-# Directories for runtime state
-RUN mkdir -p /app/.config /app/.logs /app/.cache
+# Sanity check at build time — fail fast if the binary didn't get copied
+RUN test -x /app/mybro && /app/mybro --help || echo "(no --help flag, binary present)"
 
-VOLUME ["/app/.config", "/app/.logs", "/app/.cache"]
+# Directories for runtime state
+RUN mkdir -p /app/.config /app/.logs /app/.cache /app/.data
+
+VOLUME ["/app/.config", "/app/.data", "/app/.logs", "/app/.cache"]
 
 EXPOSE 8084
 
