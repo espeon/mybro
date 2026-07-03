@@ -175,6 +175,7 @@ pub fn build_router(state: Arc<AppState>) -> axum::Router {
         // API — usage
         .route("/api/umans/usage", get(usage_api::get_usage))
         .route("/api/umans/concurrency", get(usage_api::get_concurrency))
+        .route("/api/umans/gate", get(stats_api::get_gate))
         .route("/api/umans/usage-history", get(usage_api::get_usage_history))
         .route("/api/umans/user", get(usage_api::get_user))
         // API — restart

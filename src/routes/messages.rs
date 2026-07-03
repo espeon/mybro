@@ -140,6 +140,7 @@ pub async fn messages(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| cfg.websearch_provider.clone());
+    let upstream_start = std::time::Instant::now();
     let result = state
         .upstream
         .messages(&slot.key, body_bytes, is_stream, &websearch)
@@ -177,7 +178,7 @@ pub async fn messages(
                 let record_for_first = record.clone();
                 let record_for_complete = record.clone();
                 let state_for_complete = state.clone();
-                let req_start_for_first = req_start;
+                let req_start_for_first = upstream_start;
                 let req_start_for_complete = req_start;
 
                 let on_first = move || {
@@ -220,7 +221,7 @@ pub async fn messages(
                     state.gate.bump_throttled();
                 }
 
-                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, 0, 0, Some(&error_body));
+                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, 0, 0, 0, 0, Some(&error_body));
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {
@@ -238,7 +239,7 @@ pub async fn messages(
         Err(e) => {
             state.keypool.mark_unhealthy(slot.index, 502);
             log_upstream_error(&state, 1, session.sess_num, &slot.name, 502, &e.to_string());
-            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, 0, 0, Some(&e.to_string()));
+            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, 0, 0, 0, 0, Some(&e.to_string()));
             super::anthropic_error(
                 StatusCode::BAD_GATEWAY,
                 &format!("Upstream error: {}", e),
@@ -259,6 +260,8 @@ fn record_stat(
     model: &str,
     pipeline: &'static str,
     key_name: &str,
+    tokens_in: u64,
+    tokens_out: u64,
     cached_tokens: u64,
     cache_creation_tokens: u64,
     error: Option<&str>,
@@ -275,8 +278,8 @@ fn record_stat(
         model: model.to_string(),
         pipeline,
         key_name: key_name.to_string(),
-        tokens_in: 0,
-        tokens_out: 0,
+        tokens_in,
+        tokens_out,
         cached_tokens,
         cache_creation_tokens,
         cached: cached_tokens > 0 || cache_creation_tokens > 0,

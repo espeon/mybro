@@ -79,3 +79,28 @@ pub async fn get_token_stats(
     }))
     .into_response()
 }
+
+/// `/api/umans/gate` — current concurrency state (in-flight, queued, limits).
+/// This is the live "what's happening right now" endpoint.
+pub async fn get_gate(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
+        return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
+    }
+
+    let cfg = state.config.load();
+    let eff = crate::usage::get_effective_concurrency(cfg.override_concurrency);
+
+    Json(json!({
+        "active": state.gate.active(),
+        "queued": state.gate.queued(),
+        "throttled": state.gate.throttled(),
+        "limit": eff.limit,
+        "hard_cap": eff.hard_cap,
+        "overridden": eff.overridden,
+        "max_queue_size": crate::constants::MAX_QUEUE_SIZE,
+    }))
+    .into_response()
+}

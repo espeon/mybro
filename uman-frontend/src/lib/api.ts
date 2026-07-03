@@ -200,12 +200,15 @@ export interface StatsResponse {
 export interface RequestRecord {
   ts_ms: number
   duration_ms: number
+  ttft_ms: number | null
   status: number
   model: string
   pipeline: string
   key_name: string
   tokens_in: number
   tokens_out: number
+  cached_tokens: number
+  cache_creation_tokens: number
   cached: boolean
   error: string | null
 }

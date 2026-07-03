@@ -155,6 +155,8 @@ pub async fn chat_completions(
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string())
             .unwrap_or_else(|| cfg.websearch_provider.clone());
+        // Start TTFT timer just before the upstream call, not from handler entry
+        let upstream_start = std::time::Instant::now();
         let result = state
             .upstream
             .chat_completions(&current_slot.key, body_clone, is_stream, &websearch)
@@ -202,7 +204,7 @@ pub async fn chat_completions(
                         let record_for_first = record.clone();
                         let record_for_complete = record.clone();
                         let state_for_complete = state.clone();
-                        let req_start_for_first = req_start;
+                        let req_start_for_first = upstream_start;
                         let req_start_for_complete = req_start;
 
                         let on_first = move || {
@@ -232,9 +234,11 @@ pub async fn chat_completions(
                     } else {
                         let body = crate::upstream::read_body(resp).await.unwrap_or_default();
                         // Non-streaming: TTFT ≈ total duration
-                        let dur = req_start.elapsed().as_millis() as u64;
+                        let dur = upstream_start.elapsed().as_millis() as u64;
                         let cache_stats = crate::usage_parse::extract_cache_stats(&body);
-                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, cache_stats.cached, cache_stats.creation, None);
+                        let (tokens_in, tokens_out) =
+                            crate::usage_parse::extract_token_counts(&body);
+                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, tokens_in, tokens_out, cache_stats.cached, cache_stats.creation, None);
                         if is_stream {
                             return wrap_json_as_sse(body);
                         } else {
@@ -254,7 +258,7 @@ pub async fn chat_completions(
                         if status_u16 == 503 {
                             state.gate.bump_throttled();
                         }
-                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, Some(&last_error_body));
+                        record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, 0, 0, Some(&last_error_body));
                         return Response::builder()
                             .status(status)
                             .header(header::CONTENT_TYPE, "application/json")
@@ -268,7 +272,7 @@ pub async fn chat_completions(
                         state.gate.bump_throttled();
                     }
                     let body = crate::upstream::read_body(resp).await.unwrap_or_default();
-                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, None);
+                    record_stat(&state, req_start, None, status_u16, &resolved_model, "openai", &current_slot.name, 0, 0, 0, 0, None);
                     let mut builder = Response::builder().status(status);
                     for (k, v) in &headers_clone {
                         builder = builder.header(k, v);
@@ -282,7 +286,7 @@ pub async fn chat_completions(
                 log_upstream_error(&state, attempt, session.sess_num, &current_slot.name, 502, &last_error_body);
 
                 if attempt == max_retries {
-                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, 0, 0, Some(&last_error_body));
+                    record_stat(&state, req_start, None, 502, &resolved_model, "openai", &current_slot.name, 0, 0, 0, 0, Some(&last_error_body));
                     return super::openai_error(
                         StatusCode::BAD_GATEWAY,
                         &format!("Upstream error: {}", e),
@@ -296,7 +300,7 @@ pub async fn chat_completions(
         }
     }
 
-    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, 0, 0, Some("max retries exhausted"));
+    record_stat(&state, req_start, None, 500, &resolved_model, "openai", &current_slot.name, 0, 0, 0, 0, Some("max retries exhausted"));
     super::openai_error(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Max retries exhausted",
@@ -316,6 +320,8 @@ fn record_stat(
     model: &str,
     pipeline: &'static str,
     key_name: &str,
+    tokens_in: u64,
+    tokens_out: u64,
     cached_tokens: u64,
     cache_creation_tokens: u64,
     error: Option<&str>,
@@ -332,8 +338,8 @@ fn record_stat(
         model: model.to_string(),
         pipeline,
         key_name: key_name.to_string(),
-        tokens_in: 0,
-        tokens_out: 0,
+        tokens_in,
+        tokens_out,
         cached_tokens,
         cache_creation_tokens,
         cached: cached_tokens > 0 || cache_creation_tokens > 0,
