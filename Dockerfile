@@ -16,15 +16,23 @@ FROM rust:1-bookworm AS backend
 
 WORKDIR /app
 
-# Cache dependencies
-COPY Cargo.toml ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release 2>/dev/null || true
+# Pre-warm the cargo dependency cache with an empty main.rs.
+# The || true makes this tolerant of any harmless cargo warnings.
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p src/uman-frontend/dist && echo 'fn main() {}' > src/main.rs && \
+    echo '<html></html>' > src/uman-frontend/dist/index.html && \
+    cargo build --release 2>/dev/null || true
 
-# Copy source + frontend dist (rust-embed needs dist/ at compile time)
+# Copy real source + frontend dist (rust-embed needs dist/ at compile time)
 COPY src/ ./src/
 COPY --from=frontend /app/uman-frontend/dist/ ./uman-frontend/dist/
 
-RUN cargo build --release
+# Force a rebuild: touch every source file and delete the cached binary.
+# Without this, Cargo's incremental build sees the binary from the cache
+# step and skips rebuilding even though src/main.rs has changed.
+RUN find src -name '*.rs' -exec touch {} + && \
+    rm -f target/release/mybro target/release/deps/mybro* && \
+    cargo build --release
 
 # ── Stage 3: Runtime ─────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

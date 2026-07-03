@@ -125,14 +125,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          # On main pushes: push to ghcr.io. On PRs: build only (validate),
-          # discard the image after — only the cache matters.
+          # Master pushes: push to ghcr.io. PRs: load into local docker (no push).
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags || 'mybro:ci' }}
-          outputs: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'type=image,push=true' || 'type=cacheonly' }}
           cache-from: type=gha
-          provenance: ${{ github.event_name == 'push' }}
-          sbom: ${{ github.event_name == 'push' }}
 
   # ── Combined: final embedded binary build (after frontend assets exist) ────
   embedded:
