@@ -147,8 +147,47 @@ pub async fn messages(
 
             if status.is_success() {
                 state.keypool.mark_healthy(slot.index);
-                record_stat(&state, req_start, status_u16, &resolved_model, "anthropic", &slot.name, None);
-                let stream = super::stream::pipe_response(resp);
+                // Streaming: capture TTFT on first chunk, record stats on completion.
+                let record = std::sync::Arc::new(std::sync::Mutex::new(
+                    crate::stats::RequestRecord {
+                        ts_ms: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0),
+                        duration_ms: 0,
+                        ttft_ms: None,
+                        status: 200,
+                        model: resolved_model.clone(),
+                        pipeline: "anthropic",
+                        key_name: slot.name.to_string(),
+                        tokens_in: 0,
+                        tokens_out: 0,
+                        cached: false,
+                        error: None,
+                    },
+                ));
+                let record_for_first = record.clone();
+                let record_for_complete = record.clone();
+                let state_for_complete = state.clone();
+                let req_start_for_first = req_start;
+                let req_start_for_complete = req_start;
+
+                let on_first = move || {
+                    if let Ok(mut r) = record_for_first.lock() {
+                        r.ttft_ms = Some(req_start_for_first.elapsed().as_millis() as u64);
+                    }
+                };
+                let on_complete = move || {
+                    let final_record = if let Ok(mut r) = record_for_complete.lock() {
+                        r.duration_ms = req_start_for_complete.elapsed().as_millis() as u64;
+                        r.clone()
+                    } else {
+                        return;
+                    };
+                    state_for_complete.stats.record(final_record);
+                };
+
+                let stream = super::stream::pipe_response(resp, on_first, on_complete);
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {
@@ -173,7 +212,7 @@ pub async fn messages(
                     state.gate.bump_throttled();
                 }
 
-                record_stat(&state, req_start, status_u16, &resolved_model, "anthropic", &slot.name, Some(&error_body));
+                record_stat(&state, req_start, None, status_u16, &resolved_model, "anthropic", &slot.name, Some(&error_body));
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {
@@ -191,7 +230,7 @@ pub async fn messages(
         Err(e) => {
             state.keypool.mark_unhealthy(slot.index, 502);
             log_upstream_error(&state, 1, session.sess_num, &slot.name, 502, &e.to_string());
-            record_stat(&state, req_start, 502, &resolved_model, "anthropic", &slot.name, Some(&e.to_string()));
+            record_stat(&state, req_start, None, 502, &resolved_model, "anthropic", &slot.name, Some(&e.to_string()));
             super::anthropic_error(
                 StatusCode::BAD_GATEWAY,
                 &format!("Upstream error: {}", e),
@@ -203,9 +242,11 @@ pub async fn messages(
 
 // ── Stats helper ─────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn record_stat(
     state: &AppState,
     start: std::time::Instant,
+    ttft_ms: Option<u64>,
     status: u16,
     model: &str,
     pipeline: &'static str,
@@ -219,6 +260,7 @@ fn record_stat(
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0),
         duration_ms: start.elapsed().as_millis() as u64,
+        ttft_ms,
         status,
         model: model.to_string(),
         pipeline,

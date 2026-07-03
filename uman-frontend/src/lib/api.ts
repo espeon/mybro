@@ -159,6 +159,9 @@ export interface StatsBucket {
   p50_latency_ms: number
   p95_latency_ms: number
   max_latency_ms: number
+  avg_ttft_ms: number
+  p50_ttft_ms: number
+  p95_ttft_ms: number
   tokens_in: number
   tokens_out: number
   cached: number
@@ -178,6 +181,7 @@ export interface StatsSummary {
   tokens_in: number
   tokens_out: number
   avg_latency_ms: number
+  avg_ttft_ms: number
 }
 
 export interface StatsResponse {

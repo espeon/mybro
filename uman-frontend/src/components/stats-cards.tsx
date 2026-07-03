@@ -35,11 +35,13 @@ export function StatsCards() {
   const buckets = data.buckets.length > 0 ? data.buckets : []
   const counts = buckets.map((b) => b.count)
   const latencies = buckets.map((b) => b.p95_latency_ms)
+  const ttfts = buckets.map((b) => b.p50_ttft_ms)
   const throughput = buckets.map((b) => ((b.tokens_in + b.tokens_out) / 60))
   const tokens = buckets.map((b) => b.tokens_in + b.tokens_out)
 
   const totalTokens = data.summary.tokens_in + data.summary.tokens_out
   const avgLatency = data.summary.avg_latency_ms
+  const avgTtft = data.summary.avg_ttft_ms
   const maxLatency = buckets.reduce((m, b) => Math.max(m, b.max_latency_ms), 0)
   const uptime = computeUptime(buckets.flatMap((b) =>
     Array.from({ length: Math.min(b.count, 1) }).map(() => ({
@@ -53,13 +55,20 @@ export function StatsCards() {
     throughput.length > 0 ? throughput.reduce((a, b) => a + b, 0) / throughput.length : 0
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <MetricCard
         title="Uptime"
         value={`${(uptime * 100).toFixed(3)}%`}
         subtitle="last 1h"
         sparkline={counts.length > 0 ? counts : [0]}
         color="emerald"
+      />
+      <MetricCard
+        title="TTFT"
+        value={`${avgTtft.toFixed(0)}ms`}
+        subtitle="time to first token · last 1h"
+        sparkline={ttfts.length > 0 ? ttfts : [0]}
+        color="cyan"
       />
       <MetricCard
         title="Latency"
@@ -73,14 +82,14 @@ export function StatsCards() {
         value={`${avgThroughput.toFixed(1)} tok/s`}
         subtitle="tok/s avg · last 1h"
         sparkline={throughput.length > 0 ? throughput : [0]}
-        color="cyan"
+        color="primary"
       />
       <MetricCard
         title="Tokens"
         value={totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "0"}
         subtitle="in + out · last 1h"
         sparkline={tokens.length > 0 ? tokens : [0]}
-        color="primary"
+        color="rose"
       />
     </div>
   )

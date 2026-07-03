@@ -39,6 +39,7 @@ impl StatsDB {
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  ts_ms INTEGER NOT NULL,
                  duration_ms INTEGER NOT NULL,
+                 ttft_ms INTEGER,
                  status INTEGER NOT NULL,
                  model TEXT NOT NULL,
                  pipeline TEXT NOT NULL,
@@ -136,7 +137,8 @@ impl StatsDB {
                 MAX(duration_ms) as max_latency,
                 SUM(tokens_in) as tokens_in,
                 SUM(tokens_out) as tokens_out,
-                SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached
+                SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                AVG(ttft_ms) as avg_ttft
              FROM requests
              WHERE ts_ms >= ?
              GROUP BY ts
@@ -155,6 +157,9 @@ impl StatsDB {
                 p50_latency_ms: 0.0,
                 p95_latency_ms: 0.0,
                 max_latency_ms: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
+                avg_ttft_ms: row.get::<_, Option<f64>>(9)?.unwrap_or(0.0),
+                p50_ttft_ms: 0.0,
+                p95_ttft_ms: 0.0,
                 tokens_in: row.get::<_, Option<u64>>(6)?.unwrap_or(0),
                 tokens_out: row.get::<_, Option<u64>>(7)?.unwrap_or(0),
                 cached: row.get::<_, Option<u64>>(8)?.unwrap_or(0),
@@ -176,7 +181,8 @@ impl StatsDB {
                 SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
                 SUM(tokens_in) as tokens_in,
                 SUM(tokens_out) as tokens_out,
-                AVG(duration_ms) as avg_latency
+                AVG(duration_ms) as avg_latency,
+                AVG(ttft_ms) as avg_ttft
              FROM requests
              WHERE ts_ms >= ?",
         )?;
@@ -190,6 +196,7 @@ impl StatsDB {
                 tokens_in: row.get::<_, Option<u64>>(4)?.unwrap_or(0),
                 tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
                 avg_latency_ms: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
+                avg_ttft_ms: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
             })
         })?;
         Ok(row)
@@ -249,13 +256,14 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
     {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO requests
-             (ts_ms, duration_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (ts_ms, duration_ms, ttft_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
         for rec in batch {
             stmt.execute(params![
                 rec.ts_ms,
                 rec.duration_ms,
+                rec.ttft_ms.map(|t| t as i64),
                 rec.status,
                 rec.model,
                 rec.pipeline,

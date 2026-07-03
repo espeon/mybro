@@ -16,6 +16,8 @@ use tokio::sync::mpsc;
 pub struct RequestRecord {
     pub ts_ms: u64,
     pub duration_ms: u64,
+    /// Time to first byte (or chunk, for streaming). None if not yet observed.
+    pub ttft_ms: Option<u64>,
     pub status: u16,
     pub model: String,
     pub pipeline: &'static str, // "openai" | "anthropic"
@@ -104,6 +106,9 @@ impl StatsCollector {
                 p50_latency_ms: 0.0,
                 p95_latency_ms: 0.0,
                 max_latency_ms: 0,
+                avg_ttft_ms: 0.0,
+                p50_ttft_ms: 0.0,
+                p95_ttft_ms: 0.0,
                 tokens_in: 0,
                 tokens_out: 0,
                 cached: 0,
@@ -111,8 +116,9 @@ impl StatsCollector {
             })
             .collect();
 
-        // Latencies collected per bucket for percentile computation
+        // Latencies and TTFTs collected per bucket for percentile computation
         let mut latencies_per_bucket: Vec<Vec<u64>> = vec![Vec::new(); num_buckets];
+        let mut ttfts_per_bucket: Vec<Vec<u64>> = vec![Vec::new(); num_buckets];
 
         // Single pass over records
         for rec in records.iter() {
@@ -148,6 +154,9 @@ impl StatsCollector {
             model_entry.tokens_out += rec.tokens_out;
 
             latencies_per_bucket[bi].push(rec.duration_ms);
+            if let Some(ttft) = rec.ttft_ms {
+                ttfts_per_bucket[bi].push(ttft);
+            }
         }
 
         // Compute averages and percentiles
@@ -163,6 +172,16 @@ impl StatsCollector {
             sorted.sort_unstable();
             bucket.p50_latency_ms = percentile(&sorted, 50.0);
             bucket.p95_latency_ms = percentile(&sorted, 95.0);
+
+            let ttfts = &ttfts_per_bucket[i];
+            if !ttfts.is_empty() {
+                let t_sum: u64 = ttfts.iter().sum();
+                bucket.avg_ttft_ms = t_sum as f64 / ttfts.len() as f64;
+                let mut t_sorted = ttfts.clone();
+                t_sorted.sort_unstable();
+                bucket.p50_ttft_ms = percentile(&t_sorted, 50.0);
+                bucket.p95_ttft_ms = percentile(&t_sorted, 95.0);
+            }
         }
 
         buckets
@@ -245,6 +264,13 @@ impl StatsCollector {
             0.0
         };
 
+        let ttfts: Vec<u64> = relevant.iter().filter_map(|r| r.ttft_ms).collect();
+        let avg_ttft = if !ttfts.is_empty() {
+            ttfts.iter().sum::<u64>() as f64 / ttfts.len() as f64
+        } else {
+            0.0
+        };
+
         StatsSummary {
             count,
             errors,
@@ -253,6 +279,7 @@ impl StatsCollector {
             tokens_in,
             tokens_out,
             avg_latency_ms: avg_latency,
+            avg_ttft_ms: avg_ttft,
         }
     }
 }
@@ -283,6 +310,9 @@ pub struct StatsBucket {
     pub p50_latency_ms: f64,
     pub p95_latency_ms: f64,
     pub max_latency_ms: u64,
+    pub avg_ttft_ms: f64,
+    pub p50_ttft_ms: f64,
+    pub p95_ttft_ms: f64,
     pub tokens_in: u64,
     pub tokens_out: u64,
     pub cached: u64,
@@ -306,6 +336,7 @@ pub struct StatsSummary {
     pub tokens_in: u64,
     pub tokens_out: u64,
     pub avg_latency_ms: f64,
+    pub avg_ttft_ms: f64,
 }
 
 // ── Query params ─────────────────────────────────────────────────────────────
