@@ -8,6 +8,7 @@ export function InFlightCard({
   hardCap,
   maxQueue,
   throttled,
+  error,
 }: {
   active: number
   queued: number
@@ -15,7 +16,20 @@ export function InFlightCard({
   hardCap: number | null
   maxQueue: number
   throttled: number
+  error: string | null
 }) {
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>In-Flight</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">{error}</p>
+        </CardContent>
+      </Card>
+    )
+  }
   const effectiveLimit = hardCap ?? limit ?? 4
   const fillPct = Math.min(100, (active / effectiveLimit) * 100)
   const isFull = active >= effectiveLimit

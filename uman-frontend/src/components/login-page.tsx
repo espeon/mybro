@@ -15,31 +15,48 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
     setError(null)
     setLoading(true)
     try {
-      // Validate the key by hitting a protected endpoint
       const resp = await fetch("/api/validate", {
-        headers: {
-          "X-Api-Key": key,
-        },
+        headers: { "X-Api-Key": key },
       })
-      if (resp.ok) {
-        const json = await resp.json().catch(() => ({}))
-        if (json.valid === false) {
-          setError("Invalid API key")
-          setLoading(false)
-          return
-        }
-        localStorage.setItem("umans_api_key", key)
-        onSuccess()
-      } else if (resp.status === 401) {
+      if (resp.status === 401) {
         setError("Invalid API key")
-      } else {
-        setError(`Server error: ${resp.status}`)
+        setLoading(false)
+        return
       }
+      if (!resp.ok) {
+        setError(`Server error: ${resp.status}`)
+        setLoading(false)
+        return
+      }
+      const json = await resp.json().catch(() => ({}))
+      if (json.valid === false) {
+        setError("Invalid API key")
+        setLoading(false)
+        return
+      }
+      // valid:true — could be (a) auth disabled or (b) the typed key works.
+      // In case (a) the server is unauthenticated, so we don't actually need a key —
+      // clear any previously-stored key so subsequent requests don't send garbage.
+      if (key.trim() === "") {
+        localStorage.removeItem("umans_api_key")
+      } else {
+        localStorage.setItem("umans_api_key", key)
+      }
+      onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connection failed")
     } finally {
       setLoading(false)
     }
+  }
+
+  // If auth is disabled on the server, allow submitting with an empty key
+  const submitEmpty = () => {
+    setKey("")
+    setError(null)
+    setLoading(true)
+    localStorage.removeItem("umans_api_key")
+    onSuccess()
   }
 
   return (
@@ -65,7 +82,6 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
               placeholder="sk-..."
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              required
               className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <p className="text-xs text-muted-foreground">
@@ -80,9 +96,17 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
             </div>
           )}
 
-          <Button type="submit" disabled={loading || !key} className="w-full">
-            {loading ? "Signing in…" : "Sign in"}
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? "Signing in…" : key ? "Sign in" : "Continue"}
           </Button>
+          <button
+            type="button"
+            onClick={submitEmpty}
+            disabled={loading}
+            className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Continue without a key (auth disabled)
+          </button>
         </form>
       </div>
     </div>

@@ -12,16 +12,21 @@ use std::time::Instant;
 /// `on_first_chunk` fires once when the first byte/chunk arrives — used to
 /// capture TTFT (time-to-first-token) for streaming responses.
 ///
+/// `on_chunk` fires for every chunk as it streams past — used to accumulate
+/// token/cache usage from the SSE body without buffering the whole response.
+///
 /// `on_complete` fires once when the upstream stream finishes — used to
-/// record final stats with total duration.
-pub fn pipe_response<F1, F2>(
+/// record final stats with total duration and accumulated usage.
+pub fn pipe_response<F1, F2, F3>(
     resp: reqwest::Response,
     on_first_chunk: F1,
+    on_chunk: F3,
     on_complete: F2,
 ) -> axum::body::Body
 where
     F1: FnOnce() + Send + 'static,
     F2: FnOnce() + Send + 'static,
+    F3: Fn(&Bytes) + Send + 'static,
 {
     let first_arrived = Arc::new(AtomicBool::new(false));
     let first_cb = Arc::new(Mutex::new(Some(on_first_chunk)));
@@ -36,6 +41,7 @@ where
                     cb();
                 }
             }
+            on_chunk(&bytes);
             yield Ok::<Bytes, std::io::Error>(bytes);
         }
         if let Some(cb) = complete_cb.lock().unwrap().take() {

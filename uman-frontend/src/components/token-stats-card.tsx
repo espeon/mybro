@@ -1,26 +1,16 @@
 import { useEffect, useState, useCallback } from "react"
+import { api, type TokenSummaryResp } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-interface TokenSummary {
-  key_name: string
-  count: number
-  errors: number
-  tokens_in: number
-  tokens_out: number
-  avg_latency_ms: number
-}
-
 export function TokenStatsCard() {
-  const [tokens, setTokens] = useState<TokenSummary[]>([])
+  const [tokens, setTokens] = useState<TokenSummaryResp[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const res = await fetch("/api/stats/tokens?window=3600")
-      if (!res.ok) throw new Error(`${res.status}`)
-      const json = await res.json()
+      const json = await api.getTokenStats(3600)
       setTokens(json.tokens || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

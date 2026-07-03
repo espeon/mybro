@@ -194,6 +194,23 @@ async fn chat_completions(
                 }))
                 .unwrap()
             ),
+            // Final usage chunk (emitted when stream_options.include_usage is set).
+            format!(
+                "data: {}\n\n",
+                serde_json::to_string(&json!({
+                    "id": "chatcmpl-mock",
+                    "object": "chat.completion.chunk",
+                    "model": model,
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 8,
+                        "total_tokens": 18,
+                        "prompt_tokens_details": {"cached_tokens": 4}
+                    }
+                }))
+                .unwrap()
+            ),
             "data: [DONE]\n\n".to_string(),
         ];
         let stream = async_stream::stream! {
@@ -242,7 +259,7 @@ async fn messages(
         let chunks = vec![
             format!(
                 "event: message_start\ndata: {}\n\n",
-                serde_json::to_string(&json!({"type":"message_start","message":{"id":"msg-mock","type":"message","role":"assistant","model":model,"content":[]}})).unwrap()
+                serde_json::to_string(&json!({"type":"message_start","message":{"id":"msg-mock","type":"message","role":"assistant","model":model,"content":[],"usage":{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":4,"cache_creation_input_tokens":0}}})).unwrap()
             ),
             format!(
                 "event: content_block_delta\ndata: {}\n\n",
@@ -251,6 +268,10 @@ async fn messages(
             format!(
                 "event: content_block_delta\ndata: {}\n\n",
                 serde_json::to_string(&json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"response from the mock upstream."}})).unwrap()
+            ),
+            format!(
+                "event: message_delta\ndata: {}\n\n",
+                serde_json::to_string(&json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}})).unwrap()
             ),
             "event: message_stop\ndata: {}\n\n".to_string(),
         ];

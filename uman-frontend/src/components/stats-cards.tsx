@@ -2,12 +2,6 @@ import { useEffect, useState, useCallback } from "react"
 import { api, type StatsResponse } from "@/lib/api"
 import { MetricCard } from "./metric-card"
 
-function computeUptime(records: { ts_ms: number; duration_ms: number; status: number }[]): number {
-  if (records.length === 0) return 1
-  const failed = records.filter((r) => r.status >= 500).length
-  return 1 - failed / records.length
-}
-
 export function StatsCards() {
   const [data, setData] = useState<StatsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -35,28 +29,27 @@ export function StatsCards() {
   const buckets = data.buckets.length > 0 ? data.buckets : []
   const counts = buckets.map((b) => b.count)
   const ttfts = buckets.map((b) => b.p50_ttft_ms)
-  const throughput = buckets.map((b) => ((b.tokens_in + b.tokens_out) / 60))
   const tokens = buckets.map((b) => b.tokens_in + b.tokens_out)
-
-  const totalTokens = data.summary.tokens_in + data.summary.tokens_out
   const avgTtft = data.summary.avg_ttft_ms
-  const uptime = computeUptime(buckets.flatMap((b) =>
-    Array.from({ length: Math.min(b.count, 1) }).map(() => ({
-      ts_ms: b.ts_ms,
-      duration_ms: b.avg_latency_ms,
-      status: b.errors > 0 ? 500 : 200,
-    }))
-  ))
 
-  const avgThroughput =
-    throughput.length > 0 ? throughput.reduce((a, b) => a + b, 0) / throughput.length : 0
+  // Uptime: fraction of successful (non-5xx) requests in the window
+  const totalCount = data.summary.count
+  const totalErrors = data.summary.errors
+  const uptime = totalCount > 0 ? 1 - totalErrors / totalCount : 1
+  const uptimeDisplay = totalCount === 0 ? "—" : `${(uptime * 100).toFixed(1)}%`
+
+  // Throughput: total tokens / window seconds, ignoring empty buckets
+  const totalTokens = data.summary.tokens_in + data.summary.tokens_out
+  // The stats window is "last 1h" (3600s) — use the actual window, not bucket count
+  const windowSeconds = 3600
+  const avgThroughput = windowSeconds > 0 ? totalTokens / windowSeconds : 0
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <MetricCard
         title="Uptime"
-        value={`${(uptime * 100).toFixed(3)}%`}
-        subtitle="last 1h"
+        value={uptimeDisplay}
+        subtitle={`${totalCount.toLocaleString()} reqs · last 1h`}
         sparkline={counts.length > 0 ? counts : [0]}
         color="emerald"
       />
@@ -71,7 +64,7 @@ export function StatsCards() {
         title="Throughput"
         value={`${avgThroughput.toFixed(1)} tok/s`}
         subtitle="tok/s avg · last 1h"
-        sparkline={throughput.length > 0 ? throughput : [0]}
+        sparkline={tokens.length > 0 ? tokens : [0]}
         color="primary"
       />
       <MetricCard

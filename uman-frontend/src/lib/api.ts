@@ -146,6 +146,9 @@ export const api = {
     fetchJSON<StatsSummary>(`/api/stats?window=${window}&mode=summary`),
   getStatsRecent: (limit = 50) =>
     fetchJSON<{ records: RequestRecord[] }>(`/api/stats?mode=recent&limit=${limit}`),
+  getTokenStats: (window = 300) =>
+    fetchJSON<{ window_sec: number; tokens: TokenSummaryResp[] }>(`/api/stats/tokens?window=${window}`),
+  getGate: () => fetchJSON<GateState>(`/api/umans/gate`),
 }
 
 // ── Stats types ─────────────────────────────────────────────────────────────
@@ -211,4 +214,23 @@ export interface RequestRecord {
   cache_creation_tokens: number
   cached: boolean
   error: string | null
+}
+
+export interface TokenSummaryResp {
+  key_name: string
+  count: number
+  errors: number
+  tokens_in: number
+  tokens_out: number
+  avg_latency_ms: number
+}
+
+export interface GateState {
+  active: number
+  queued: number
+  throttled: number
+  limit: number | null
+  hard_cap: number | null
+  overridden: boolean
+  max_queue_size: number
 }

@@ -131,6 +131,20 @@ pub async fn chat_completions(
         .await;
     }
 
+    // 12.5 Ask OpenAI to report token usage in the streaming response. Without
+    // stream_options.include_usage the final usage chunk is never sent, so stats
+    // would record zero tokens for every streamed request.
+    if is_stream {
+        if let Some(obj) = payload.as_object_mut() {
+            let opts = obj
+                .entry("stream_options")
+                .or_insert_with(|| json!({}));
+            if let Some(opts) = opts.as_object_mut() {
+                opts.insert("include_usage".to_string(), json!(true));
+            }
+        }
+    }
+
     // 13. Serialize once → Bytes
     let serialized = serde_json::to_vec(&payload).unwrap_or_default();
     let body_bytes = Bytes::from(serialized);
@@ -201,9 +215,14 @@ pub async fn chat_completions(
                                 error: None,
                             },
                         ));
+                        let usage_acc = std::sync::Arc::new(std::sync::Mutex::new(
+                            crate::usage_parse::SseUsageAccumulator::new(),
+                        ));
                         let record_for_first = record.clone();
                         let record_for_complete = record.clone();
                         let state_for_complete = state.clone();
+                        let acc_for_chunk = usage_acc.clone();
+                        let acc_for_complete = usage_acc.clone();
                         let req_start_for_first = upstream_start;
                         let req_start_for_complete = req_start;
 
@@ -213,10 +232,24 @@ pub async fn chat_completions(
                                     Some(req_start_for_first.elapsed().as_millis() as u64);
                             }
                         };
+                        let on_chunk = move |bytes: &Bytes| {
+                            if let Ok(mut a) = acc_for_chunk.lock() {
+                                a.ingest(bytes);
+                            }
+                        };
                         let on_complete = move || {
+                            let usage = acc_for_complete
+                                .lock()
+                                .map(|mut a| a.finish())
+                                .unwrap_or_default();
                             let final_record = if let Ok(mut r) = record_for_complete.lock() {
                                 r.duration_ms =
                                     req_start_for_complete.elapsed().as_millis() as u64;
+                                r.tokens_in = usage.tokens_in;
+                                r.tokens_out = usage.tokens_out;
+                                r.cached_tokens = usage.cached;
+                                r.cache_creation_tokens = usage.creation;
+                                r.cached = usage.cached > 0 || usage.creation > 0;
                                 r.clone()
                             } else {
                                 return;
@@ -224,7 +257,8 @@ pub async fn chat_completions(
                             state_for_complete.stats.record(final_record);
                         };
 
-                        let stream = super::stream::pipe_response(resp, on_first, on_complete);
+                        let stream =
+                            super::stream::pipe_response(resp, on_first, on_chunk, on_complete);
                         return Response::builder()
                             .status(StatusCode::OK)
                             .header(header::CONTENT_TYPE, "text/event-stream")
@@ -235,10 +269,8 @@ pub async fn chat_completions(
                         let body = crate::upstream::read_body(resp).await.unwrap_or_default();
                         // Non-streaming: TTFT ≈ total duration
                         let dur = upstream_start.elapsed().as_millis() as u64;
-                        let cache_stats = crate::usage_parse::extract_cache_stats(&body);
-                        let (tokens_in, tokens_out) =
-                            crate::usage_parse::extract_token_counts(&body);
-                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, tokens_in, tokens_out, cache_stats.cached, cache_stats.creation, None);
+                        let usage = crate::usage_parse::extract_usage(&body);
+                        record_stat(&state, req_start, Some(dur), 200, &resolved_model, "openai", &current_slot.name, usage.tokens_in, usage.tokens_out, usage.cached, usage.creation, None);
                         if is_stream {
                             return wrap_json_as_sse(body);
                         } else {

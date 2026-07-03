@@ -154,7 +154,27 @@ pub async fn messages(
 
             if status.is_success() {
                 state.keypool.mark_healthy(slot.index);
-                // Streaming: capture TTFT on first chunk, record stats on completion.
+
+                let is_sse = headers_clone
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.contains("text/event-stream"))
+                    .unwrap_or(false);
+
+                if !is_sse {
+                    // Non-streaming: read the full body, extract usage, record.
+                    let body = crate::upstream::read_body(resp).await.unwrap_or_default();
+                    let dur = upstream_start.elapsed().as_millis() as u64;
+                    let usage = crate::usage_parse::extract_usage(&body);
+                    record_stat(&state, req_start, Some(dur), status_u16, &resolved_model, "anthropic", &slot.name, usage.tokens_in, usage.tokens_out, usage.cached, usage.creation, None);
+                    let mut builder = Response::builder().status(status);
+                    for (k, v) in &headers_clone {
+                        builder = builder.header(k, v);
+                    }
+                    return builder.body(Body::from(body)).unwrap();
+                }
+
+                // Streaming: capture TTFT on first chunk, accumulate usage, record on completion.
                 let record = std::sync::Arc::new(std::sync::Mutex::new(
                     crate::stats::RequestRecord {
                         ts_ms: std::time::SystemTime::now()
@@ -175,9 +195,14 @@ pub async fn messages(
                         error: None,
                     },
                 ));
+                let usage_acc = std::sync::Arc::new(std::sync::Mutex::new(
+                    crate::usage_parse::SseUsageAccumulator::new(),
+                ));
                 let record_for_first = record.clone();
                 let record_for_complete = record.clone();
                 let state_for_complete = state.clone();
+                let acc_for_chunk = usage_acc.clone();
+                let acc_for_complete = usage_acc.clone();
                 let req_start_for_first = upstream_start;
                 let req_start_for_complete = req_start;
 
@@ -186,9 +211,23 @@ pub async fn messages(
                         r.ttft_ms = Some(req_start_for_first.elapsed().as_millis() as u64);
                     }
                 };
+                let on_chunk = move |bytes: &Bytes| {
+                    if let Ok(mut a) = acc_for_chunk.lock() {
+                        a.ingest(bytes);
+                    }
+                };
                 let on_complete = move || {
+                    let usage = acc_for_complete
+                        .lock()
+                        .map(|mut a| a.finish())
+                        .unwrap_or_default();
                     let final_record = if let Ok(mut r) = record_for_complete.lock() {
                         r.duration_ms = req_start_for_complete.elapsed().as_millis() as u64;
+                        r.tokens_in = usage.tokens_in;
+                        r.tokens_out = usage.tokens_out;
+                        r.cached_tokens = usage.cached;
+                        r.cache_creation_tokens = usage.creation;
+                        r.cached = usage.cached > 0 || usage.creation > 0;
                         r.clone()
                     } else {
                         return;
@@ -196,7 +235,7 @@ pub async fn messages(
                     state_for_complete.stats.record(final_record);
                 };
 
-                let stream = super::stream::pipe_response(resp, on_first, on_complete);
+                let stream = super::stream::pipe_response(resp, on_first, on_chunk, on_complete);
 
                 let mut builder = Response::builder().status(status);
                 for (k, v) in &headers_clone {

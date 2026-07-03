@@ -8,7 +8,25 @@ function formatTokens(n: number): string {
   return n.toString()
 }
 
-export function CacheCard({ summary }: { summary: StatsSummary | null }) {
+export function CacheCard({
+  summary,
+  error,
+}: {
+  summary: StatsSummary | null
+  error: string | null
+}) {
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Prompt Cache</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">{error}</p>
+        </CardContent>
+      </Card>
+    )
+  }
   if (!summary) {
     return (
       <Card>

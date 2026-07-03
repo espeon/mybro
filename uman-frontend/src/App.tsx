@@ -7,6 +7,7 @@ import { TokenStatsCard } from "@/components/token-stats-card"
 import { CacheCard } from "@/components/cache-card"
 import { InFlightCard } from "@/components/in-flight-card"
 import { RecentRequestsTable } from "@/components/recent-requests-table"
+import { StatusBar } from "@/components/status-bar"
 import { LoginPage } from "@/components/login-page"
 import { useStatsSummary } from "@/hooks/use-stats-summary"
 import { useGate } from "@/hooks/use-gate"
@@ -43,24 +44,52 @@ export function App() {
 
   // First, check whether the server actually requires auth. If API_KEYS is empty,
   // /api/validate returns ok without a key, so we can skip login.
+  // - 200 + valid:true  → auth disabled OR our stored key works → no login needed
+  // - 200 + valid:false → auth is required, no key → show login
+  // - 401               → auth is required, our key was rejected → show login
+  // - network error     → retry; do NOT bypass auth (server might be up but unreachable)
   const [needsAuth, setNeedsAuth] = useState<boolean | null>(null)
+  const [authCheckFailed, setAuthCheckFailed] = useState(false)
   useEffect(() => {
-    fetch("/api/validate", { headers: { "X-Api-Key": localStorage.getItem("umans_api_key") || "" } })
-      .then((r) => r.json())
-      .then((j) => {
-        // If the server returned 200 with valid:true, we're in (or auth is disabled).
-        // If 200 with valid:false, auth is required but we don't have it.
-        // We only need to show login if auth is required AND we don't have a key.
-        setNeedsAuth(true)
-        if (j.valid === true) {
-          // Either auth disabled, or our stored key works
-          setNeedsAuth(false)
+    let cancelled = false
+    const check = async () => {
+      try {
+        const resp = await fetch("/api/validate", {
+          headers: { "X-Api-Key": localStorage.getItem("umans_api_key") || "" },
+        })
+        if (cancelled) return
+        if (resp.status === 401) {
+          setNeedsAuth(true)
+        } else {
+          const j = await resp.json().catch(() => ({}))
+          setNeedsAuth(j.valid === false)
         }
-      })
-      .catch(() => setNeedsAuth(false))
+        setAuthCheckFailed(false)
+      } catch {
+        if (cancelled) return
+        // Network error: leave needsAuth as null (still loading) and surface the error
+        setAuthCheckFailed(true)
+      }
+    }
+    check()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (needsAuth === null) {
+    if (authCheckFailed) {
+      return (
+        <div className="min-h-svh bg-background flex items-center justify-center p-4">
+          <div className="text-center space-y-2">
+            <h1 className="text-lg font-semibold">mybro</h1>
+            <p className="text-sm text-muted-foreground">
+              Can&apos;t reach the proxy. Is it running?
+            </p>
+          </div>
+        </div>
+      )
+    }
     // Still figuring out if auth is needed — render nothing
     return <div className="min-h-svh bg-background" />
   }
@@ -87,8 +116,8 @@ function Dashboard({
   onLogout: () => void
   onRestart: () => void
 }) {
-  const { summary } = useStatsSummary(3600)
-  const { gate } = useGate()
+  const { summary, error: summaryError } = useStatsSummary(3600)
+  const { gate, error: gateError } = useGate()
   const { records } = useRecentRequests(50)
 
   return (
@@ -113,19 +142,8 @@ function Dashboard({
           </div>
         </div>
 
-        {/* Status bar */}
-        <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-            Signed in as <span className="font-mono text-foreground">…{apiKey.slice(-6)}</span>
-          </div>
-          {gate && (
-            <div className="flex items-center gap-2">
-              <span>{gate.active} in-flight</span>
-              {gate.queued > 0 && <span className="text-amber-500">{gate.queued} queued</span>}
-            </div>
-          )}
-        </div>
+        {/* Status bar — dot color reflects actual health, not just "signed in" */}
+        <StatusBar apiKey={apiKey} gate={gate} />
 
         {/* Metric cards (no Latency — nixed) */}
         <StatsCards />
@@ -140,9 +158,10 @@ function Dashboard({
               hardCap={gate.hard_cap}
               maxQueue={gate.max_queue_size}
               throttled={gate.throttled}
+              error={gateError}
             />
           )}
-          <CacheCard summary={summary} />
+          <CacheCard summary={summary} error={summaryError} />
         </div>
 
         {/* Time-series chart */}
