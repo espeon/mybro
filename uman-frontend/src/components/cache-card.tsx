@@ -91,19 +91,6 @@ export function CacheCard({
             <p className="font-mono">{formatTokens(summary.tokens_out)}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 border-t pt-2">
-          <div>
-            <span className="text-muted-foreground">Max context</span>
-            <p className="font-mono text-amber-500" title="Largest input seen in this window">
-              {summary.max_context_tokens > 0
-                ? formatTokens(summary.max_context_tokens)
-                : "—"}
-            </p>
-          </div>
-          <div className="text-xs text-muted-foreground self-end">
-            largest input in window
-          </div>
-        </div>
       </CardContent>
     </Card>
   )
