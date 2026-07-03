@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, type StatsSummary } from "@/lib/api"
+import { useStatsFilter } from "./use-stats-filter"
 
 export function useStatsSummary(window = 3600, model?: string) {
+  const { paused } = useStatsFilter()
   const [summary, setSummary] = useState<StatsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -20,9 +22,10 @@ export function useStatsSummary(window = 3600, model?: string) {
 
   useEffect(() => {
     refresh()
+    if (paused) return
     const interval = setInterval(refresh, 5000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, paused])
 
   return { summary, loading, error, refresh }
 }

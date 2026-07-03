@@ -118,7 +118,7 @@ function Dashboard({
   onLogout: () => void
   onRestart: () => void
 }) {
-  const { window, model } = useStatsFilter()
+  const { window, model, paused, togglePaused } = useStatsFilter()
   const { summary, error: summaryError } = useStatsSummary(window, model)
   const { gate, error: gateError } = useGate()
   const { records } = useRecentRequests(50, model)
@@ -134,6 +134,13 @@ function Dashboard({
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant={paused ? "default" : "outline"}
+              size="sm"
+              onClick={togglePaused}
+            >
+              {paused ? "▶ Resume" : "⏸ Pause"}
+            </Button>
             <Button
               variant="outline"
               size="sm"

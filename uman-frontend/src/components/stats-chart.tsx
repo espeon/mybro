@@ -17,7 +17,7 @@ import type { ValueType } from "recharts/types/component/DefaultTooltipContent"
 type Metric = "count" | "latency" | "errors" | "tokens"
 
 export function StatsChart() {
-  const { window: win, model } = useStatsFilter()
+  const { window: win, model, paused } = useStatsFilter()
   const [data, setData] = useState<StatsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [metric, setMetric] = useState<Metric>("count")
@@ -47,9 +47,10 @@ export function StatsChart() {
 
   useEffect(() => {
     refresh()
+    if (paused) return
     const interval = setInterval(() => refreshRef.current?.(), 5000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, paused])
 
   const buckets = data?.buckets ?? []
   const summary = data?.summary
@@ -138,9 +139,25 @@ export function StatsChart() {
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Req/min:</span>
+                <span className="font-mono font-medium">
+                  {(() => {
+                    const mins = win / 60
+                    return mins > 0
+                      ? ((summary?.count ?? 0) / mins).toFixed(1)
+                      : "0"
+                  })()}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Errors:</span>
                 <span className="font-mono font-medium text-destructive">
                   {summary?.errors ?? 0}
+                  {(summary?.count ?? 0) > 0 && (
+                    <span className="ml-1 text-muted-foreground">
+                      ({(((summary?.errors ?? 0) / (summary?.count ?? 1)) * 100).toFixed(1)}%)
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="flex items-center gap-1">

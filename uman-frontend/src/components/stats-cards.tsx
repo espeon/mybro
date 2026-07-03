@@ -5,7 +5,7 @@ import { formatNumber, formatTime } from "@/lib/utils"
 import { useStatsFilter } from "@/hooks/use-stats-filter"
 
 export function StatsCards() {
-  const { window, model } = useStatsFilter()
+  const { window, model, paused } = useStatsFilter()
   const [data, setData] = useState<StatsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,9 +31,10 @@ export function StatsCards() {
 
   useEffect(() => {
     refresh()
+    if (paused) return
     const interval = setInterval(refresh, 15000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, paused])
 
   if (!data && !error) return null
   if (error) return <p className="text-sm text-destructive">{error}</p>

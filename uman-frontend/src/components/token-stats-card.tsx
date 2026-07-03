@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { useStatsFilter } from "@/hooks/use-stats-filter"
 
 export function TokenStatsCard() {
-  const { window, model } = useStatsFilter()
+  const { window, model, paused } = useStatsFilter()
   const [tokens, setTokens] = useState<TokenSummaryResp[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -21,9 +21,10 @@ export function TokenStatsCard() {
 
   useEffect(() => {
     refresh()
+    if (paused) return
     const interval = setInterval(refresh, 15000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, paused])
 
   const windowLabel =
     window >= 3600 ? `${window / 3600}h` : `${window / 60}m`

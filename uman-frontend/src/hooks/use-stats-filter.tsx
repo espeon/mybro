@@ -10,20 +10,73 @@ export const WINDOW_OPTIONS = [
   { label: "24h", value: 86400 },
 ]
 
+const STORAGE_KEY = "mybro_stats_filter"
+const DEFAULT_WINDOW = 300
+
+interface PersistedFilter {
+  window: number
+  model: string
+}
+
+function loadFilter(): PersistedFilter {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedFilter>
+      return {
+        window: typeof parsed.window === "number" ? parsed.window : DEFAULT_WINDOW,
+        model: typeof parsed.model === "string" ? parsed.model : "",
+      }
+    }
+  } catch {
+    // ignore corrupt JSON
+  }
+  return { window: DEFAULT_WINDOW, model: "" }
+}
+
+function saveFilter(f: PersistedFilter) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(f))
+  } catch {
+    // ignore quota errors
+  }
+}
+
 interface StatsFilterState {
   window: number
   model: string
   models: string[]
+  paused: boolean
   setWindow: (w: number) => void
   setModel: (m: string) => void
+  togglePaused: () => void
 }
 
 const Ctx = createContext<StatsFilterState | null>(null)
 
 export function StatsFilterProvider({ children }: { children: ReactNode }) {
-  const [window, setWindow] = useState(300)
-  const [model, setModel] = useState("")
+  const initial = loadFilter()
+  const [window, setWindowState] = useState(initial.window)
+  const [model, setModelState] = useState(initial.model)
   const [models, setModels] = useState<string[]>([])
+  const [paused, setPaused] = useState(false)
+
+  const setWindow = useCallback((w: number) => {
+    setWindowState(w)
+  }, [])
+
+  const setModel = useCallback((m: string) => {
+    setModelState(m)
+  }, [])
+
+  const togglePaused = useCallback(() => {
+    setPaused((p) => !p)
+  }, [])
+
+  // Persist to localStorage whenever the filter changes
+  useEffect(() => {
+    saveFilter({ window, model })
+  }, [window, model])
 
   // Fetch available model names whenever the window changes.
   // Uses a wider window (max of current window, 3600) so the dropdown doesn't
@@ -47,12 +100,12 @@ export function StatsFilterProvider({ children }: { children: ReactNode }) {
   // If the selected model is no longer in the list, clear it
   useEffect(() => {
     if (model && models.length > 0 && !models.includes(model)) {
-      setModel("")
+      setModelState("")
     }
   }, [model, models])
 
   return (
-    <Ctx.Provider value={{ window, model, models, setWindow, setModel }}>
+    <Ctx.Provider value={{ window, model, models, paused, setWindow, setModel, togglePaused }}>
       {children}
     </Ctx.Provider>
   )

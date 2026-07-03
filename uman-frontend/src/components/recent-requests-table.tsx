@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { RequestRecord } from "@/lib/api"
+import { useStatsFilter } from "@/hooks/use-stats-filter"
 
 function formatTime(ts_ms: number): string {
   return new Date(ts_ms).toLocaleTimeString([], {
@@ -24,6 +25,8 @@ function statusVariant(
 }
 
 export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
+  const { setModel } = useStatsFilter()
+
   return (
     <Card>
       <CardHeader>
@@ -39,6 +42,7 @@ export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
                 <tr className="border-b text-muted-foreground">
                   <th className="py-1 pr-2 text-left font-medium">Time</th>
                   <th className="py-1 pr-2 text-left font-medium">Model</th>
+                  <th className="py-1 pr-2 text-left font-medium">Key</th>
                   <th className="py-1 pr-2 text-left font-medium">Status</th>
                   <th className="py-1 pr-2 text-right font-medium">TTFT</th>
                   <th className="py-1 pr-2 text-right font-medium">Total</th>
@@ -54,7 +58,18 @@ export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
                     <td className="py-1 pr-2 font-mono text-muted-foreground">
                       {formatTime(r.ts_ms)}
                     </td>
-                    <td className="py-1 pr-2 font-mono">{r.model}</td>
+                    <td className="py-1 pr-2 font-mono">
+                      <button
+                        className="cursor-pointer hover:text-primary hover:underline"
+                        onClick={() => setModel(r.model)}
+                        title={`Filter by ${r.model}`}
+                      >
+                        {r.model}
+                      </button>
+                    </td>
+                    <td className="py-1 pr-2 font-mono text-muted-foreground">
+                      {r.key_name || "—"}
+                    </td>
                     <td className="py-1 pr-2">
                       <Badge variant={statusVariant(r.status)}>
                         {r.status}

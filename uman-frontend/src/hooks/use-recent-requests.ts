@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, type RequestRecord } from "@/lib/api"
+import { useStatsFilter } from "./use-stats-filter"
 
 export function useRecentRequests(limit = 50, model?: string) {
+  const { paused } = useStatsFilter()
   const [records, setRecords] = useState<RequestRecord[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -18,9 +20,10 @@ export function useRecentRequests(limit = 50, model?: string) {
 
   useEffect(() => {
     refresh()
+    if (paused) return
     const interval = setInterval(refresh, 3000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, paused])
 
   return { records, loading, refresh }
 }
