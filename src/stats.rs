@@ -274,6 +274,7 @@ impl StatsCollector {
         let cache_creation_tokens: u64 = relevant.iter().map(|r| r.cache_creation_tokens).sum();
         let tokens_in: u64 = relevant.iter().map(|r| r.tokens_in).sum();
         let tokens_out: u64 = relevant.iter().map(|r| r.tokens_out).sum();
+        let max_context_tokens = relevant.iter().map(|r| r.tokens_in).max().unwrap_or(0);
         let cache_hit_rate = if tokens_in > 0 {
             cached_tokens as f64 / tokens_in as f64
         } else {
@@ -292,6 +293,18 @@ impl StatsCollector {
             0.0
         };
 
+        // Generation throughput: output tokens divided by time actually spent
+        // generating (duration after the first token). Only requests that
+        // reported a TTFT and spent time past it can be measured; prompt input
+        // (including cached tokens) is deliberately excluded.
+        let (gen_tokens_out, gen_time_ms) =
+            relevant.iter().fold((0u64, 0u64), |(tok, time), r| match r.ttft_ms {
+                Some(ttft) if r.duration_ms > ttft => {
+                    (tok + r.tokens_out, time + (r.duration_ms - ttft))
+                }
+                _ => (tok, time),
+            });
+
         StatsSummary {
             count,
             errors,
@@ -304,6 +317,9 @@ impl StatsCollector {
             tokens_out,
             avg_latency_ms: avg_latency,
             avg_ttft_ms: avg_ttft,
+            max_context_tokens,
+            gen_tokens_out,
+            gen_time_ms,
         }
     }
 }
@@ -367,6 +383,14 @@ pub struct StatsSummary {
     pub tokens_out: u64,
     pub avg_latency_ms: f64,
     pub avg_ttft_ms: f64,
+    /// Largest `tokens_in` value seen in the window. Useful as a cost watch —
+    /// long contexts are expensive on some upstream models.
+    pub max_context_tokens: u64,
+    /// Output tokens across requests where generation time is measurable.
+    /// Pairs with `gen_time_ms` to give generation throughput (tok/s).
+    pub gen_tokens_out: u64,
+    /// Summed generation time (`duration_ms - ttft_ms`) over those same requests.
+    pub gen_time_ms: u64,
 }
 
 // ── Query params ─────────────────────────────────────────────────────────────
@@ -395,4 +419,56 @@ fn now_millis() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record_at(ts_ms: u64, duration_ms: u64, ttft_ms: Option<u64>, tokens_out: u64) -> RequestRecord {
+        RequestRecord {
+            ts_ms,
+            duration_ms,
+            ttft_ms,
+            status: 200,
+            model: "big-model".to_string(),
+            pipeline: "anthropic",
+            key_name: "test".to_string(),
+            tokens_in: 100_000, // large prompt: must NOT leak into throughput
+            tokens_out,
+            cached_tokens: 90_000,
+            cache_creation_tokens: 0,
+            cached: true,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn generation_throughput_uses_output_over_generation_time() {
+        let collector = StatsCollector::new();
+        let now = now_millis();
+        // 80 tokens over 800ms of generation, 50 over 500ms → 130 tokens / 1.3s = 100 tok/s.
+        collector.record(record_at(now - 1000, 1000, Some(200), 80));
+        collector.record(record_at(now - 800, 600, Some(100), 50));
+        // No TTFT reported → not measurable, excluded from both sums.
+        collector.record(record_at(now - 500, 300, None, 30));
+
+        let s = collector.summary(60_000);
+        assert_eq!(s.gen_tokens_out, 130);
+        assert_eq!(s.gen_time_ms, 1300);
+        let throughput = s.gen_tokens_out as f64 / (s.gen_time_ms as f64 / 1000.0);
+        assert!((throughput - 100.0).abs() < 1e-9, "got {throughput}");
+    }
+
+    #[test]
+    fn generation_throughput_ignores_zero_length_generation() {
+        let collector = StatsCollector::new();
+        let now = now_millis();
+        // duration == ttft: no measurable generation window.
+        collector.record(record_at(now - 100, 200, Some(200), 40));
+
+        let s = collector.summary(60_000);
+        assert_eq!(s.gen_tokens_out, 0);
+        assert_eq!(s.gen_time_ms, 0);
+    }
 }

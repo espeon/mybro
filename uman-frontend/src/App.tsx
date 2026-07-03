@@ -17,7 +17,9 @@ import { api } from "@/lib/api"
 import { useEffect, useState } from "react"
 
 function useAuth() {
-  const [authed, setAuthed] = useState(() => !!localStorage.getItem("umans_api_key"))
+  const [authed, setAuthed] = useState(
+    () => !!localStorage.getItem("umans_api_key")
+  )
   const login = () => setAuthed(true)
   const logout = () => {
     localStorage.removeItem("umans_api_key")
@@ -80,8 +82,8 @@ export function App() {
   if (needsAuth === null) {
     if (authCheckFailed) {
       return (
-        <div className="min-h-svh bg-background flex items-center justify-center p-4">
-          <div className="text-center space-y-2">
+        <div className="flex min-h-svh items-center justify-center bg-background p-4">
+          <div className="space-y-2 text-center">
             <h1 className="text-lg font-semibold">mybro</h1>
             <p className="text-sm text-muted-foreground">
               Can&apos;t reach the proxy. Is it running?
@@ -99,11 +101,7 @@ export function App() {
   }
 
   return (
-    <Dashboard
-      apiKey={apiKey}
-      onLogout={logout}
-      onRestart={handleRestart}
-    />
+    <Dashboard apiKey={apiKey} onLogout={logout} onRestart={handleRestart} />
   )
 }
 
@@ -126,11 +124,16 @@ function Dashboard({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold">mybro</h1>
-            <p className="text-xs text-muted-foreground">local reverse proxy & dashboard</p>
+            <h1 className="text-xl font-semibold">
+              my<i>bro</i>
+            </h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => location.reload()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => location.reload()}
+            >
               Refresh
             </Button>
             <Button variant="ghost" size="sm" onClick={onLogout}>

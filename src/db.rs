@@ -3,15 +3,15 @@
 // Records are first buffered in memory (stats.rs) and drained here by a
 // background task. This keeps the hot proxy path off disk.
 //
-// Schema:
-//   requests(ts_ms, duration_ms, status, model, pipeline, key_name, tokens_in, tokens_out, cached, error)
-//   hourly_stats(ts_hour, model, key_name, count, errors, throttled, latency_sum, latency_max, tokens_in, tokens_out)
+// Schema lives in `migrations/*.sql` and is applied on startup by
+// `run_migrations`. The framework tracks applied versions in a
+// `schema_migrations` table.
 //
 // Retention: raw requests 24h; hourly stats 30d.
 
 use crate::stats::RequestRecord;
 use parking_lot::Mutex;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +22,91 @@ const RAW_RETENTION_HOURS: u64 = 24;
 const HOURLY_RETENTION_DAYS: u64 = 30;
 const CHANNEL_SIZE: usize = 4096;
 
+// ── Embedded migrations ───────────────────────────────────────────────────────
+//
+// Add new migrations at the end — never reorder or rename an applied one.
+// Each entry is (version, SQL). Version is a free-form string but should be
+// monotonic so the table reads sensibly.
+
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "001_initial",
+        include_str!("../migrations/001_initial.sql"),
+    ),
+];
+
+/// Apply any pending migrations. Idempotent — already-applied versions are
+/// skipped. Handles the legacy case where a DB exists from before this
+/// framework was added: if `requests` exists but `schema_migrations` is empty,
+/// baseline every known migration without re-running it.
+fn run_migrations(conn: &mut Connection) -> Result<(), rusqlite::Error> {
+    let tx = conn.transaction()?;
+
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    let applied_count: i64 = tx
+        .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .unwrap_or(0);
+
+    if applied_count == 0 {
+        let has_legacy_schema: bool = tx
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='requests'",
+                [],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+
+        if has_legacy_schema {
+            tracing::info!(
+                "stats.db predates migration framework — baselining {} migration(s)",
+                MIGRATIONS.len()
+            );
+            for (version, _) in MIGRATIONS {
+                tx.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+                    params![*version, now_millis() as i64],
+                )?;
+            }
+            tx.commit()?;
+            return Ok(());
+        }
+    }
+
+    for (version, sql) in MIGRATIONS {
+        let applied: Option<i64> = tx
+            .query_row(
+                "SELECT applied_at FROM schema_migrations WHERE version = ?1",
+                [*version],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if applied.is_some() {
+            continue;
+        }
+
+        tracing::info!("applying migration {}", version);
+        tx.execute_batch(sql)?;
+        tx.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+            params![*version, now_millis() as i64],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
 pub struct StatsDB {
     sender: mpsc::Sender<RequestRecord>,
     conn: Arc<Mutex<Connection>>,
@@ -31,45 +116,11 @@ impl StatsDB {
     pub fn new() -> Self {
         let path = Path::new(".data");
         let _ = std::fs::create_dir_all(path);
-        let conn = Connection::open(path.join("stats.db")).expect("open stats.db");
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             CREATE TABLE IF NOT EXISTS requests (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 ts_ms INTEGER NOT NULL,
-                 duration_ms INTEGER NOT NULL,
-                 ttft_ms INTEGER,
-                 status INTEGER NOT NULL,
-                 model TEXT NOT NULL,
-                 pipeline TEXT NOT NULL,
-                 key_name TEXT NOT NULL,
-                 tokens_in INTEGER NOT NULL,
-                 tokens_out INTEGER NOT NULL,
-                 cached_tokens INTEGER NOT NULL DEFAULT 0,
-                 cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-                 cached INTEGER NOT NULL,
-                 error TEXT
-             );
-             CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts_ms);
-             CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model);
-             CREATE INDEX IF NOT EXISTS idx_requests_key ON requests(key_name);
-             CREATE TABLE IF NOT EXISTS hourly_stats (
-                 ts_hour INTEGER NOT NULL,
-                 model TEXT NOT NULL,
-                 key_name TEXT NOT NULL,
-                 count INTEGER NOT NULL,
-                 errors INTEGER NOT NULL,
-                 throttled INTEGER NOT NULL,
-                 latency_sum INTEGER NOT NULL,
-                 latency_max INTEGER NOT NULL,
-                 tokens_in INTEGER NOT NULL,
-                 tokens_out INTEGER NOT NULL,
-                 PRIMARY KEY (ts_hour, model, key_name)
-             );
-             CREATE INDEX IF NOT EXISTS idx_hourly_ts ON hourly_stats(ts_hour);",
-        )
-        .expect("init stats schema");
+        let mut conn = Connection::open(path.join("stats.db")).expect("open stats.db");
+        // Connection-level settings (not migrations — they're per-connection).
+        conn.execute_batch("PRAGMA journal_mode = WAL;\nPRAGMA synchronous = NORMAL;")
+            .expect("set pragmas");
+        run_migrations(&mut conn).expect("run migrations");
 
         let conn = Arc::new(Mutex::new(conn));
         let (sender, mut receiver) = mpsc::channel::<RequestRecord>(CHANNEL_SIZE);
@@ -198,7 +249,10 @@ impl StatsDB {
                 AVG(duration_ms) as avg_latency,
                 AVG(ttft_ms) as avg_ttft,
                 SUM(cached_tokens) as cached_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens
+                SUM(cache_creation_tokens) as cache_creation_tokens,
+                MAX(tokens_in) as max_context,
+                SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN tokens_out ELSE 0 END) as gen_tokens_out,
+                SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms ELSE 0 END) as gen_time_ms
              FROM requests
              WHERE ts_ms >= ?",
         )?;
@@ -224,6 +278,9 @@ impl StatsDB {
                 tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
                 avg_latency_ms: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
                 avg_ttft_ms: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+                max_context_tokens: row.get::<_, Option<u64>>(10)?.unwrap_or(0),
+                gen_tokens_out: row.get::<_, Option<u64>>(11)?.unwrap_or(0),
+                gen_time_ms: row.get::<_, Option<u64>>(12)?.unwrap_or(0),
             })
         })?;
         Ok(row)

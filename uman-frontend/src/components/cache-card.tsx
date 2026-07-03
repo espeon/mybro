@@ -67,7 +67,7 @@ export function CacheCard({
             <p className="font-mono text-lg font-semibold">{summary.cached}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+        <div className="grid grid-cols-2 gap-2 border-t pt-2">
           <div>
             <span className="text-muted-foreground">Hits (read)</span>
             <p className="font-mono text-emerald-500">
@@ -81,7 +81,7 @@ export function CacheCard({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+        <div className="grid grid-cols-2 gap-2 border-t pt-2">
           <div>
             <span className="text-muted-foreground">Total in</span>
             <p className="font-mono">{formatTokens(summary.tokens_in)}</p>
@@ -91,11 +91,19 @@ export function CacheCard({
             <p className="font-mono">{formatTokens(summary.tokens_out)}</p>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground pt-2">
-          Parsed from upstream usage (Anthropic cache_read / cache_creation, OpenAI
-          prompt_tokens_details.cached_tokens / cache_creation_tokens). GLM doesn't
-          report cache, so it will show 0s.
-        </p>
+        <div className="grid grid-cols-2 gap-2 border-t pt-2">
+          <div>
+            <span className="text-muted-foreground">Max context</span>
+            <p className="font-mono text-amber-500" title="Largest input seen in this window">
+              {summary.max_context_tokens > 0
+                ? formatTokens(summary.max_context_tokens)
+                : "—"}
+            </p>
+          </div>
+          <div className="text-xs text-muted-foreground self-end">
+            largest input in window
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

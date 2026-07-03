@@ -32,22 +32,35 @@ export function TokenStatsCard() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="space-y-2">
           {tokens.map((t) => (
-            <div key={t.key_name} className="flex items-center justify-between rounded-md border p-2">
+            <div
+              key={t.key_name}
+              className="flex items-center justify-between rounded-md border p-2"
+            >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{t.key_name || "Unknown"}</span>
-                  {t.errors > 0 && <Badge variant="destructive">{t.errors} errors</Badge>}
+                  <span className="text-sm font-medium">
+                    {t.key_name || "Unknown"}
+                  </span>
+                  {t.errors > 0 && (
+                    <Badge variant="destructive">{t.errors} errors</Badge>
+                  )}
                 </div>
                 <p className="font-mono text-xs text-muted-foreground">
                   {t.count} reqs · {t.avg_latency_ms.toFixed(0)}ms avg
                 </p>
               </div>
               <div className="text-right">
-                <div className="font-mono text-xs">{(t.tokens_in + t.tokens_out).toLocaleString()} tok</div>
+                <div className="font-mono text-xs">
+                  {(t.tokens_in + t.tokens_out).toLocaleString()} tok
+                </div>
               </div>
             </div>
           ))}
-          {tokens.length === 0 && <p className="text-sm text-muted-foreground">No data in last hour</p>}
+          {tokens.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No data in last hour
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

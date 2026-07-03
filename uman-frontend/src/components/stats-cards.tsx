@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, type StatsResponse } from "@/lib/api"
 import { MetricCard } from "./metric-card"
+import { formatNumber, formatTime } from "@/lib/utils"
 
 export function StatsCards() {
   const [data, setData] = useState<StatsResponse | null>(null)
@@ -30,6 +31,7 @@ export function StatsCards() {
   const counts = buckets.map((b) => b.count)
   const ttfts = buckets.map((b) => b.p50_ttft_ms)
   const tokens = buckets.map((b) => b.tokens_in + b.tokens_out)
+  const tokensOut = buckets.map((b) => b.tokens_out)
   const avgTtft = data.summary.avg_ttft_ms
 
   // Uptime: fraction of successful (non-5xx) requests in the window
@@ -38,11 +40,12 @@ export function StatsCards() {
   const uptime = totalCount > 0 ? 1 - totalErrors / totalCount : 1
   const uptimeDisplay = totalCount === 0 ? "—" : `${(uptime * 100).toFixed(1)}%`
 
-  // Throughput: total tokens / window seconds, ignoring empty buckets
+  // Throughput: output tokens generated per second of actual generation time
+  // (duration after first token). Excludes prompt/cached input, which the model
+  // ingests in parallel and would otherwise inflate the figure.
   const totalTokens = data.summary.tokens_in + data.summary.tokens_out
-  // The stats window is "last 1h" (3600s) — use the actual window, not bucket count
-  const windowSeconds = 3600
-  const avgThroughput = windowSeconds > 0 ? totalTokens / windowSeconds : 0
+  const genSeconds = data.summary.gen_time_ms / 1000
+  const avgThroughput = genSeconds > 0 ? data.summary.gen_tokens_out / genSeconds : 0
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -55,21 +58,21 @@ export function StatsCards() {
       />
       <MetricCard
         title="TTFT"
-        value={`${avgTtft.toFixed(0)}ms`}
+        value={formatTime(avgTtft)}
         subtitle="time to first token · last 1h"
         sparkline={ttfts.length > 0 ? ttfts : [0]}
         color="cyan"
       />
       <MetricCard
         title="Throughput"
-        value={`${avgThroughput.toFixed(1)} tok/s`}
-        subtitle="tok/s avg · last 1h"
-        sparkline={tokens.length > 0 ? tokens : [0]}
+        value={`${formatNumber(avgThroughput)} tok/s`}
+        subtitle="output tok/s while generating · last 1h"
+        sparkline={tokensOut.length > 0 ? tokensOut : [0]}
         color="primary"
       />
       <MetricCard
         title="Tokens"
-        value={totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "0"}
+        value={totalTokens > 0 ? formatNumber(totalTokens) : "0"}
         subtitle="in + out · last 1h"
         sparkline={tokens.length > 0 ? tokens : [0]}
         color="rose"

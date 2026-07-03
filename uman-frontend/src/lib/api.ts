@@ -191,6 +191,12 @@ export interface StatsSummary {
   tokens_out: number
   avg_latency_ms: number
   avg_ttft_ms: number
+  /** Largest `tokens_in` value seen in the window — long-context cost watch. */
+  max_context_tokens: number
+  /** Output tokens over requests with measurable generation time. */
+  gen_tokens_out: number
+  /** Summed generation time (`duration_ms - ttft_ms`) for those requests. */
+  gen_time_ms: number
 }
 
 export interface StatsResponse {

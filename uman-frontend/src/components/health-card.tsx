@@ -55,7 +55,9 @@ export function HealthCard() {
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
             <span className="text-muted-foreground">Runtime</span>
-            <p className="font-mono">{health.runtime} {health.runtime_version}</p>
+            <p className="font-mono">
+              {health.runtime} {health.runtime_version}
+            </p>
           </div>
           <div>
             <span className="text-muted-foreground">Port</span>
@@ -90,11 +92,16 @@ export function HealthCard() {
         </div>
         {health.visionHandoff.enabled && (
           <div className="border-t pt-2">
-            <span className="text-sm text-muted-foreground">Vision Handoff</span>
+            <span className="text-sm text-muted-foreground">
+              Vision Handoff
+            </span>
             <div className="mt-1 flex gap-2 text-xs">
               <Badge variant="outline">enabled</Badge>
               {health.visionHandoff.cacheEnabled && (
-                <Badge variant="outline">cache: {health.visionHandoff.cache.size}/{health.visionHandoff.cache.maxSize}</Badge>
+                <Badge variant="outline">
+                  cache: {health.visionHandoff.cache.size}/
+                  {health.visionHandoff.cache.maxSize}
+                </Badge>
               )}
             </div>
           </div>

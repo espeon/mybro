@@ -3,7 +3,11 @@ import { Badge } from "@/components/ui/badge"
 import type { RequestRecord } from "@/lib/api"
 
 function formatTime(ts_ms: number): string {
-  return new Date(ts_ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  return new Date(ts_ms).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
 }
 
 function formatDuration(ms: number): string {
@@ -11,7 +15,9 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(2)}s`
 }
 
-function statusVariant(status: number): "default" | "destructive" | "secondary" {
+function statusVariant(
+  status: number
+): "default" | "destructive" | "secondary" {
   if (status >= 500) return "destructive"
   if (status >= 400) return "secondary"
   return "default"
@@ -23,7 +29,7 @@ export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
       <CardHeader>
         <CardTitle>Recent Requests</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="h-100 max-h-100 space-y-2 overflow-y-auto">
         {records.length === 0 ? (
           <p className="text-sm text-muted-foreground">No requests yet</p>
         ) : (
@@ -50,7 +56,9 @@ export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
                     </td>
                     <td className="py-1 pr-2 font-mono">{r.model}</td>
                     <td className="py-1 pr-2">
-                      <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
+                      <Badge variant={statusVariant(r.status)}>
+                        {r.status}
+                      </Badge>
                     </td>
                     <td className="py-1 pr-2 text-right font-mono">
                       {r.ttft_ms !== null ? formatDuration(r.ttft_ms) : "—"}
@@ -65,10 +73,14 @@ export function RecentRequestsTable({ records }: { records: RequestRecord[] }) {
                       {r.tokens_out > 0 ? r.tokens_out.toLocaleString() : "—"}
                     </td>
                     <td className="py-1 pr-2 text-right font-mono text-emerald-500">
-                      {r.cached_tokens > 0 ? r.cached_tokens.toLocaleString() : "—"}
+                      {r.cached_tokens > 0
+                        ? r.cached_tokens.toLocaleString()
+                        : "—"}
                     </td>
                     <td className="py-1 pr-2 text-right font-mono text-cyan-500">
-                      {r.cache_creation_tokens > 0 ? r.cache_creation_tokens.toLocaleString() : "—"}
+                      {r.cache_creation_tokens > 0
+                        ? r.cache_creation_tokens.toLocaleString()
+                        : "—"}
                     </td>
                   </tr>
                 ))}
