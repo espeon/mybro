@@ -1,4 +1,4 @@
-use crate::config::{ConfigStore, mask_token};
+use crate::config::ConfigStore;
 use crate::errlog::ErrorLog;
 use crate::gate::Gate;
 use crate::handoff_cache::HandoffCache;
@@ -55,7 +55,7 @@ pub enum ApiFormat {
     Anthropic,
 }
 
-pub fn check_auth(state: &AppState, headers: &axum::http::HeaderMap, format: ApiFormat) -> Result<(), axum::http::StatusCode> {
+pub fn check_auth(state: &AppState, headers: &axum::http::HeaderMap, _format: ApiFormat) -> Result<(), axum::http::StatusCode> {
     let cfg = state.config.load();
     if cfg.api_keys.is_empty() {
         return Ok(()); // open access
@@ -119,7 +119,7 @@ pub fn auth_error_response(format: ApiFormat) -> (axum::http::StatusCode, axum::
 
 // ── Error helpers (spec §15.3) ───────────────────────────────────────────────
 
-pub fn openai_error(status: axum::http::StatusCode, msg: &str, error_type: &str) -> axum::Json<serde_json::Value> {
+pub fn openai_error(_status: axum::http::StatusCode, msg: &str, error_type: &str) -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
         "error": {
             "message": msg,
@@ -150,7 +150,6 @@ pub fn anthropic_error(status: axum::http::StatusCode, msg: &str) -> axum::Json<
 
 // ── mask_token re-export for convenience ─────────────────────────────────────
 
-pub use crate::config::mask_token as _mask_token;
 
 // ── Router ───────────────────────────────────────────────────────────────────
 

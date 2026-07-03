@@ -1,4 +1,4 @@
-use axum::http::{HeaderMap, HeaderValue, Method, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method};
 use bytes::Bytes;
 use std::time::Duration;
 

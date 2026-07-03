@@ -3,11 +3,10 @@
 use crate::routes::AppState;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, Utc};
+use chrono::Utc;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 static BING_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static WALLHAVEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

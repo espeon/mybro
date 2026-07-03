@@ -1,5 +1,5 @@
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 // ── HandoffCache (spec §4) ───────────────────────────────────────────────────
@@ -51,11 +51,10 @@ impl HandoffCache {
 
     pub fn set(&self, digest: [u8; 32], desc: std::sync::Arc<str>) {
         let mut inner = self.inner.lock();
-        if inner.len() >= inner.cap().get() {
-            if inner.pop_lru().is_some() {
+        if inner.len() >= inner.cap().get()
+            && inner.pop_lru().is_some() {
                 self.evictions.fetch_add(1, Ordering::Relaxed);
             }
-        }
         inner.put(digest, CacheEntry { desc, inserted: Instant::now() });
     }
 

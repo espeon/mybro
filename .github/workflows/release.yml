@@ -91,8 +91,8 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uman-linux-x86_64
-          path: target/release/uman
+          name: mybro-linux-x86_64
+          path: target/release/mybro
 
       # ── Create GitHub release with binary attached ─────────────────────
       - name: Create GitHub release
@@ -101,6 +101,6 @@ jobs:
           name: v${{ steps.version.outputs.VERSION }}
           draft: true
           generate_release_notes: true
-          files: target/release/uman
+          files: target/release/mybro
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

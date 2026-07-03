@@ -20,17 +20,14 @@ pub struct ConfigKey {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum WallpaperSource {
     None,
+    #[default]
     Bing,
     Wallhaven,
 }
 
-impl Default for WallpaperSource {
-    fn default() -> Self {
-        Self::Bing
-    }
-}
 
 impl std::fmt::Display for WallpaperSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -233,7 +230,7 @@ impl Config {
         let dir = Path::new(".config");
         std::fs::create_dir_all(dir)?;
         let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         let tmp = dir.join("config.json.tmp");
         std::fs::write(&tmp, &json)?;
         std::fs::rename(&tmp, dir.join("config.json"))?;

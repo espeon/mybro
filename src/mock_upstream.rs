@@ -12,7 +12,6 @@ use bytes::Bytes;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tokio::sync::Mutex;
 
 pub struct MockUpstream {
     port: u16,
@@ -95,7 +94,7 @@ impl MockUpstream {
 
 async fn models_info(State(state): State<Arc<MockUpstream>>) -> Response {
     state.simulate_delay().await;
-    JsonResponse(json!({
+    json_response(json!({
         "umans-coder": {
             "id": "umans-coder",
             "display_name": "Coder",
@@ -122,7 +121,7 @@ async fn models_info(State(state): State<Arc<MockUpstream>>) -> Response {
 async fn usage(State(state): State<Arc<MockUpstream>>) -> Response {
     state.simulate_delay().await;
     let limit = state.concurrency_limit.load(Ordering::Relaxed);
-    JsonResponse(json!({
+    json_response(json!({
         "usage": {
             "requests_in_window": 246,
             "tokens_in": 24000000,
@@ -141,7 +140,7 @@ async fn usage(State(state): State<Arc<MockUpstream>>) -> Response {
 
 async fn models(State(state): State<Arc<MockUpstream>>) -> Response {
     state.simulate_delay().await;
-    JsonResponse(json!({
+    json_response(json!({
         "data": [
             { "id": "umans-coder", "pricing": { "input": 0.000001, "output": 0.000003 } },
             { "id": "umans-vision", "pricing": { "input": 0.000002, "output": 0.000005 } }
@@ -151,7 +150,7 @@ async fn models(State(state): State<Arc<MockUpstream>>) -> Response {
 
 async fn chat_completions(
     State(state): State<Arc<MockUpstream>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: axum::body::Body,
 ) -> Response {
     let n = state.request_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -159,7 +158,7 @@ async fn chat_completions(
     if err_every > 0 && n % err_every as u64 == 0 {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            JsonBody(json!({"error": {"message": "mock upstream overloaded", "type": "overloaded_error"}})),
+            json_body(json!({"error": {"message": "mock upstream overloaded", "type": "overloaded_error"}})),
         )
             .into_response();
     }
@@ -214,7 +213,7 @@ async fn chat_completions(
             .body(Body::from_stream(stream))
             .unwrap()
     } else {
-        JsonResponse(json!({
+        json_response(json!({
             "id": "chatcmpl-mock",
             "object": "chat.completion",
             "model": model,
@@ -230,7 +229,7 @@ async fn chat_completions(
 
 async fn messages(
     State(state): State<Arc<MockUpstream>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: axum::body::Body,
 ) -> Response {
     let body_bytes = axum::body::to_bytes(body, 5 * 1024 * 1024).await.unwrap_or_default();
@@ -270,7 +269,7 @@ async fn messages(
             .body(Body::from_stream(stream))
             .unwrap()
     } else {
-        JsonResponse(json!({
+        json_response(json!({
             "id": "msg-mock",
             "type": "message",
             "role": "assistant",
@@ -281,7 +280,7 @@ async fn messages(
     }
 }
 
-fn JsonResponse(value: serde_json::Value) -> Response {
+fn json_response(value: serde_json::Value) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
@@ -289,6 +288,6 @@ fn JsonResponse(value: serde_json::Value) -> Response {
         .unwrap()
 }
 
-fn JsonBody(value: serde_json::Value) -> Body {
+fn json_body(value: serde_json::Value) -> Body {
     Body::from(value.to_string())
 }

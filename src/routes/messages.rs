@@ -4,7 +4,6 @@ use crate::payload;
 use crate::schema_norm;
 use crate::catalog;
 use crate::vision;
-use crate::errlog;
 use crate::routes::{AppState, ApiFormat};
 use axum::body::Body;
 use axum::extract::State;

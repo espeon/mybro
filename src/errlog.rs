@@ -1,11 +1,10 @@
 // ── Error logging (spec §14) ─────────────────────────────────────────────────
 
 use parking_lot::Mutex;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
-use std::time::SystemTime;
 
 pub struct ErrorLog {
     writer: Mutex<std::io::BufWriter<File>>,

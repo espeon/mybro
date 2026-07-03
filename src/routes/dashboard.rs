@@ -3,7 +3,7 @@
 use crate::routes::AppState;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 use std::sync::Arc;

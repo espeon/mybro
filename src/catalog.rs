@@ -78,7 +78,7 @@ impl Catalog {
 
 // ── Global catalog storage ──────────────────────────────────────────────────
 
-static CATALOG: LazyLock<ArcSwapOption<Catalog>> = LazyLock::new(|| ArcSwapOption::empty());
+static CATALOG: LazyLock<ArcSwapOption<Catalog>> = LazyLock::new(ArcSwapOption::empty);
 static CATALOG_FETCHED_AT: LazyLock<tokio::sync::Mutex<Option<Instant>>> =
     LazyLock::new(|| tokio::sync::Mutex::new(None));
 

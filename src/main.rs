@@ -1,3 +1,9 @@
+// Allow dead code across the crate — many helpers are public API for tests
+// or kept for planned features. Re-enable specific lint groups as code matures.
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+
 mod catalog;
 mod config;
 mod constants;
@@ -42,7 +48,7 @@ async fn main() {
         )
         .init();
 
-    tracing::info!("umans-proxy-rs starting up");
+    tracing::info!("mybro starting up");
 
     // 1. Load config + env overrides + validate
     let cfg = Config::load();
@@ -307,7 +313,7 @@ fn parse_cli_args() -> CliArgs {
     let mut args = std::env::args().skip(1).peekable();
     let mut cli = CliArgs {
         otel_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_default(),
-        otel_service_name: "umans-proxy".to_string(),
+        otel_service_name: "mybro".to_string(),
         otel_enabled: false,
         dev_proxy: None,
         mock_upstream: None,
@@ -345,7 +351,7 @@ fn parse_cli_args() -> CliArgs {
                 }
             }
             "--help" | "-h" => {
-                eprintln!("umans-proxy [options]");
+                eprintln!("mybro [options]");
                 eprintln!("  --otel-endpoint <url>    OTLP HTTP collector endpoint");
                 eprintln!("  --otel-enabled           Enable OTel export (requires endpoint)");
                 eprintln!("  --otel-service-name <n>  OTel service name (default: umans-proxy)");

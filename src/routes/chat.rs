@@ -4,7 +4,6 @@ use crate::payload;
 use crate::schema_norm;
 use crate::catalog;
 use crate::vision;
-use crate::errlog;
 use crate::routes::{AppState, ApiFormat};
 use axum::body::Body;
 use axum::extract::State;
@@ -139,7 +138,6 @@ pub async fn chat_completions(
     // 14. Retry loop (§13)
     let max_retries = crate::constants::MAX_RETRIES;
     let mut current_slot = slot.clone();
-    let mut last_status = 0u16;
     let mut last_error_body = String::new();
     let req_start = std::time::Instant::now();
 
@@ -196,7 +194,6 @@ pub async fn chat_completions(
                         }
                     }
                 } else if status_u16 == 500 || status_u16 == 503 {
-                    last_status = status_u16;
                     last_error_body = read_error_body(resp).await;
                     state.keypool.mark_unhealthy(current_slot.index, status_u16);
                     log_upstream_error(&state, attempt, session.sess_num, &current_slot.name, status_u16, &last_error_body);
@@ -228,7 +225,6 @@ pub async fn chat_completions(
                 }
             }
             Err(e) => {
-                last_status = 502;
                 last_error_body = e.to_string();
                 state.keypool.mark_unhealthy(current_slot.index, 502);
                 log_upstream_error(&state, attempt, session.sess_num, &current_slot.name, 502, &last_error_body);

@@ -126,7 +126,6 @@ pub async fn get_concurrency(
 
 // ── GET /api/umans/usage-history (spec §29.3) ────────────────────────────────
 
-use parking_lot::Mutex;
 
 static USAGE_HISTORY_CACHE: parking_lot::Mutex<Option<std::collections::HashMap<String, (std::time::Instant, serde_json::Value)>>> =
     parking_lot::Mutex::new(None);

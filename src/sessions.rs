@@ -1,6 +1,5 @@
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 // ── Session tracking (spec §12) ──────────────────────────────────────────────
 

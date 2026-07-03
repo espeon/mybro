@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=backend /app/target/release/uman /app/uman
+COPY --from=backend /app/target/release/mybro /app/mybro
 
 # Directories for runtime state
 RUN mkdir -p /app/.config /app/.logs /app/.cache
@@ -46,4 +46,4 @@ EXPOSE 8084
 
 ENV LISTEN_ADDR=0.0.0.0:8084
 
-ENTRYPOINT ["/app/uman"]
+ENTRYPOINT ["/app/mybro"]

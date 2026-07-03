@@ -147,5 +147,5 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uman-${{ runner.arch }}
-          path: target/release/uman
+          name: mybro-${{ runner.arch }}
+          path: target/release/mybro

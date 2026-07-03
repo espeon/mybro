@@ -4,7 +4,6 @@ use crate::catalog;
 use crate::routes::AppState;
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use std::sync::Arc;
@@ -15,7 +14,7 @@ pub async fn v1_models(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    if let Err(_) = super::check_auth(&state, &headers, super::ApiFormat::OpenAI) {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
         return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
     }
 
@@ -74,7 +73,7 @@ pub async fn v1_models(
                 if let Ok(body) = crate::upstream::read_body(resp).await {
                     if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&body) {
                         if let Some(data) = v.get("data").and_then(|d| d.as_array()) {
-                            for model in models.iter() {
+                            for _model in models.iter() {
                                 // pricing enrichment would happen here
                                 // (each model's id matched against data array)
                             }
@@ -200,7 +199,7 @@ pub async fn get_models(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    if let Err(_) = super::check_auth(&state, &headers, super::ApiFormat::OpenAI) {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
         return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
     }
 

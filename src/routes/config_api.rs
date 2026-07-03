@@ -1,13 +1,10 @@
 // ─<arg_value>/~ Config API (spec §26–27) ──────────────────────────────────────────────────
 
-use crate::config::{Config, ConfigKey, ConfigStore, mask_token, WallpaperSource};
+use crate::config::{ConfigKey, mask_token, WallpaperSource};
 use crate::routes::AppState;
-use crate::catalog;
-use crate::gate::Gate;
 use crate::keypool::KeyEntry;
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
@@ -19,7 +16,7 @@ pub async fn get_config(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    if let Err(_) = super::check_auth(&state, &headers, super::ApiFormat::OpenAI) {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
         return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
     }
 
@@ -82,7 +79,7 @@ pub async fn post_config(
     headers: axum::http::HeaderMap,
     Json(update): Json<ConfigUpdate>,
 ) -> Response {
-    if let Err(_) = super::check_auth(&state, &headers, super::ApiFormat::OpenAI) {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
         return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
     }
 
@@ -184,7 +181,7 @@ pub async fn validate(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    if let Err(_) = super::check_auth(&state, &headers, super::ApiFormat::OpenAI) {
+    if super::check_auth(&state, &headers, super::ApiFormat::OpenAI).is_err() {
         return super::auth_error_response(super::ApiFormat::OpenAI).into_response();
     }
 

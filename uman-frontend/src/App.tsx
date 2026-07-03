@@ -40,7 +40,7 @@ export function App() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold">umans proxy</h1>
+            <h1 className="text-lg font-semibold">mybro</h1>
             <p className="text-xs text-muted-foreground">local reverse proxy & dashboard</p>
           </div>
           <div className="flex items-center gap-2">

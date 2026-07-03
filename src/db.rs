@@ -154,10 +154,10 @@ impl StatsDB {
                 avg_latency_ms: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
                 p50_latency_ms: 0.0,
                 p95_latency_ms: 0.0,
-                max_latency_ms: row.get::<_, Option<u64>>(5)?.unwrap_or(0) as u64,
-                tokens_in: row.get::<_, Option<u64>>(6)?.unwrap_or(0) as u64,
-                tokens_out: row.get::<_, Option<u64>>(7)?.unwrap_or(0) as u64,
-                cached: row.get::<_, Option<u64>>(8)?.unwrap_or(0) as u64,
+                max_latency_ms: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
+                tokens_in: row.get::<_, Option<u64>>(6)?.unwrap_or(0),
+                tokens_out: row.get::<_, Option<u64>>(7)?.unwrap_or(0),
+                cached: row.get::<_, Option<u64>>(8)?.unwrap_or(0),
                 by_model: std::collections::BTreeMap::new(),
             });
         }
@@ -183,12 +183,12 @@ impl StatsDB {
 
         let row = stmt.query_row(params![start_ms], |row| {
             Ok(crate::stats::StatsSummary {
-                count: row.get::<_, Option<u64>>(0)?.unwrap_or(0) as u64,
-                errors: row.get::<_, Option<u64>>(1)?.unwrap_or(0) as u64,
-                throttled: row.get::<_, Option<u64>>(2)?.unwrap_or(0) as u64,
-                cached: row.get::<_, Option<u64>>(3)?.unwrap_or(0) as u64,
-                tokens_in: row.get::<_, Option<u64>>(4)?.unwrap_or(0) as u64,
-                tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0) as u64,
+                count: row.get::<_, Option<u64>>(0)?.unwrap_or(0),
+                errors: row.get::<_, Option<u64>>(1)?.unwrap_or(0),
+                throttled: row.get::<_, Option<u64>>(2)?.unwrap_or(0),
+                cached: row.get::<_, Option<u64>>(3)?.unwrap_or(0),
+                tokens_in: row.get::<_, Option<u64>>(4)?.unwrap_or(0),
+                tokens_out: row.get::<_, Option<u64>>(5)?.unwrap_or(0),
                 avg_latency_ms: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
             })
         })?;
@@ -272,9 +272,9 @@ fn flush_batch(conn: &Arc<Mutex<Connection>>, batch: &[RequestRecord]) -> Result
 }
 
 fn cleanup(conn: &Arc<Mutex<Connection>>) -> Result<(), rusqlite::Error> {
-    let mut conn = conn.lock();
+    let conn = conn.lock();
     let raw_cutoff = now_millis() - RAW_RETENTION_HOURS * 60 * 60 * 1000;
-    let hourly_cutoff = now_hour() - (HOURLY_RETENTION_DAYS * 24) as u64;
+    let hourly_cutoff = now_hour() - (HOURLY_RETENTION_DAYS * 24);
     conn.execute("DELETE FROM requests WHERE ts_ms < ?", params![raw_cutoff])?;
     conn.execute(
         "DELETE FROM hourly_stats WHERE ts_hour < ?",

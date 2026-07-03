@@ -66,12 +66,12 @@ fn normalize_schema(node: &mut Value, defs: &mut HashMap<&str, &Value>, depth: u
     };
 
     // Merge local definitions/​$defs into defs
-    let local_keys: Vec<String> = obj
+    let _local_keys: Vec<String> = obj
         .get("definitions")
         .and_then(|v| v.as_object())
         .map(|o| o.keys().cloned().collect())
         .unwrap_or_default();
-    let local_defs_keys: Vec<String> = obj
+    let _local_defs_keys: Vec<String> = obj
         .get("$defs")
         .and_then(|v| v.as_object())
         .map(|o| o.keys().cloned().collect())

@@ -43,9 +43,9 @@ struct CachedConcurrency {
     fetched_at: Instant,
 }
 
-static USAGE_CACHE: LazyLock<ArcSwapOption<CachedUsage>> = LazyLock::new(|| ArcSwapOption::empty());
-static CONCURRENCY_CACHE: LazyLock<ArcSwapOption<CachedConcurrency>> = LazyLock::new(|| ArcSwapOption::empty());
-static EFFECTIVE_CACHE: LazyLock<ArcSwapOption<Effective>> = LazyLock::new(|| ArcSwapOption::empty());
+static USAGE_CACHE: LazyLock<ArcSwapOption<CachedUsage>> = LazyLock::new(ArcSwapOption::empty);
+static CONCURRENCY_CACHE: LazyLock<ArcSwapOption<CachedConcurrency>> = LazyLock::new(ArcSwapOption::empty);
+static EFFECTIVE_CACHE: LazyLock<ArcSwapOption<Effective>> = LazyLock::new(ArcSwapOption::empty);
 
 static FETCH_GUARD: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
 

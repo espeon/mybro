@@ -130,7 +130,7 @@ impl OtelProviders {
 }
 
 fn build_tracer_provider(
-    cfg: &OtelConfig,
+    _cfg: &OtelConfig,
     resource: &Resource,
 ) -> Result<opentelemetry_sdk::trace::TracerProvider, String> {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
@@ -147,7 +147,7 @@ fn build_tracer_provider(
 }
 
 fn build_meter_provider(
-    cfg: &OtelConfig,
+    _cfg: &OtelConfig,
     resource: &Resource,
 ) -> Result<opentelemetry_sdk::metrics::SdkMeterProvider, String> {
     let exporter = opentelemetry_otlp::MetricExporter::builder()
