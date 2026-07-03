@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [main, main]
   pull_request:
-    branches: [master, main]
+    branches: [main, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -89,7 +89,7 @@ jobs:
         working-directory: uman-frontend
         run: pnpm build
 
-  # ── Docker: validate the multi-stage build + push on master ───────────────
+  # ── Docker: validate the multi-stage build + push on main ───────────────
   docker:
     name: Docker build & push
     runs-on: ubuntu-latest
@@ -101,7 +101,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to ghcr.io
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -110,7 +110,7 @@ jobs:
 
       - name: Compute image tags
         id: meta
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           DATE=$(date +%Y%m%d)
           SHORT_SHA="${GITHUB_SHA::7}"
@@ -125,11 +125,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          # On master pushes: push to ghcr.io. On PRs: build only (validate),
+          # On main pushes: push to ghcr.io. On PRs: build only (validate),
           # discard the image after — only the cache matters.
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags || 'mybro:ci' }}
-          outputs: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'type=image,push=true' || 'type=cacheonly' }}
+          outputs: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'type=image,push=true' || 'type=cacheonly' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: ${{ github.event_name == 'push' }}
