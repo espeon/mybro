@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import type { Healthz } from "@/lib/api"
+import { useHealth } from "@/hooks/use-health"
 
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
@@ -10,7 +10,22 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-export function HealthCard({ health }: { health: Healthz | null }) {
+export function HealthCard() {
+  const { health, loading, error } = useHealth()
+
+  if (error && !health) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Health</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">{error}</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (!health) {
     return (
       <Card>
@@ -18,7 +33,9 @@ export function HealthCard({ health }: { health: Healthz | null }) {
           <CardTitle>Health</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Loading…" : "No data"}
+          </p>
         </CardContent>
       </Card>
     )
