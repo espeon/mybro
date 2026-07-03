@@ -27,6 +27,9 @@ RUN mkdir -p src/uman-frontend/dist && echo 'fn main() {}' > src/main.rs && \
 COPY src/ ./src/
 COPY --from=frontend /app/uman-frontend/dist/ ./uman-frontend/dist/
 
+# copy in the migrations directory too
+COPY migrations/ ./migrations/
+
 # Force a rebuild: touch every source file and delete the cached binary.
 # Without this, Cargo's incremental build sees the binary from the cache
 # step and skips rebuilding even though src/main.rs has changed.
