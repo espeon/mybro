@@ -130,7 +130,7 @@ function Dashboard({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">
-              my<i>bro</i>
+              <i>my</i>bro
             </h1>
           </div>
           <div className="flex items-center gap-2">
