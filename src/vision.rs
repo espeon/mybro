@@ -10,9 +10,9 @@ use std::sync::Arc;
 // ── Vision handoff (spec §9) ─────────────────────────────────────────────────
 
 /// Reference to an image part in the payload, stored as a JSON pointer path.
-struct ImageRef {
-    path: String,
-    data_uri: String,
+pub struct ImageRef {
+    pub path: String,
+    pub data_uri: String,
 }
 
 /// Walk system + all message content arrays collecting image parts (spec §9.3).

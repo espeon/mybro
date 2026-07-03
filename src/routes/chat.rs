@@ -138,7 +138,7 @@ pub async fn chat_completions(
     // 14. Retry loop (§13)
     let max_retries = crate::constants::MAX_RETRIES;
     let mut current_slot = slot.clone();
-    let mut last_error_body = String::new();
+    let mut last_error_body: String;
     let req_start = std::time::Instant::now();
 
     for attempt in 1..=max_retries {
