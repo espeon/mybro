@@ -212,7 +212,7 @@ impl StatsCollector {
         records
             .iter()
             .rev()
-            .filter(|r| model.map_or(true, |m| r.model == m))
+            .filter(|r| model.is_none_or(|m| r.model == m))
             .take(limit)
             .cloned()
             .collect()
@@ -235,7 +235,7 @@ impl StatsCollector {
         for r in records
             .iter()
             .filter(|r| r.ts_ms >= start_ms)
-            .filter(|r| model.map_or(true, |m| r.model == m))
+            .filter(|r| model.is_none_or(|m| r.model == m))
         {
             let e = by_key.entry(r.key_name.clone()).or_insert_with(|| {
                 crate::db::TokenSummary {
@@ -301,7 +301,7 @@ impl StatsCollector {
         let relevant: Vec<&RequestRecord> = records
             .iter()
             .filter(|r| r.ts_ms >= start_ms)
-            .filter(|r| model.map_or(true, |m| r.model == m))
+            .filter(|r| model.is_none_or(|m| r.model == m))
             .collect();
 
         let count = relevant.len() as u64;
