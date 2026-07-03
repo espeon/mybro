@@ -37,33 +37,56 @@ pub async fn serve_dashboard(
     }
 }
 
-/// Serve static assets from the embedded frontend (JS, CSS, images, etc.)
+/// Serve static assets from the embedded frontend (JS, CSS, images, etc.).
+/// Also handles SPA routing by falling back to index.html for non-asset paths.
 pub async fn serve_asset(
     State(state): State<Arc<AppState>>,
-    axum::extract::Path(path): axum::extract::Path<String>,
+    axum::extract::Path(raw_path): axum::extract::Path<String>,
 ) -> Response {
     // In dev mode, proxy to the Vite dev server
     if let Some(dev_url) = &state.dev_proxy {
-        return proxy_to_dev(dev_url, &format!("/{}", path)).await;
+        return proxy_to_dev(dev_url, &format!("/{}", raw_path)).await;
     }
 
-    // Try the exact path first
-    if let Some(asset) = FrontendAssets::get(&path) {
-        let mime = mime_guess::from_path(&path).first_or_octet_stream();
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, mime.as_ref())
-            .body(Body::from(asset.data))
-            .unwrap();
-    }
+    // axum's Path extractor in a fallback handler may include the leading
+    // slash (e.g. "/assets/foo.js"). rust-embed expects paths without it.
+    let path = raw_path.trim_start_matches('/');
+    let path_with_html = format!("{}.html", path);
 
-    // SPA fallback: serve index.html for client-side routing
-    match FrontendAssets::get("index.html") {
-        Some(asset) => Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Body::from(asset.data))
-            .unwrap(),
+    // Try exact path → with .html suffix → SPA fallback to index.html
+    let asset = FrontendAssets::get(path)
+        .or_else(|| FrontendAssets::get(&path_with_html))
+        .or_else(|| FrontendAssets::get("index.html"));
+
+    match asset {
+        Some(asset) => {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            let is_index = path == "index.html" || path.is_empty();
+
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime.as_ref())
+                // Static assets get long cache; index.html is always fresh
+                .header(
+                    header::CACHE_CONTROL,
+                    if is_index {
+                        "no-cache, must-revalidate"
+                    } else {
+                        "public, max-age=31536000, immutable"
+                    },
+                )
+                .body(Body::from(asset.data))
+                .unwrap();
+
+            // For index.html, inject wallpaper style too
+            if is_index {
+                let mut response = response;
+                inject_wallpaper_style(&state, &mut response).await;
+                return response;
+            }
+
+            response
+        }
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
