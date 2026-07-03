@@ -45,7 +45,8 @@ export function StatsCards() {
   // ingests in parallel and would otherwise inflate the figure.
   const totalTokens = data.summary.tokens_in + data.summary.tokens_out
   const genSeconds = data.summary.gen_time_ms / 1000
-  const avgThroughput = genSeconds > 0 ? data.summary.gen_tokens_out / genSeconds : 0
+  const avgThroughput =
+    genSeconds > 0 ? data.summary.gen_tokens_out / genSeconds : 0
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -66,7 +67,7 @@ export function StatsCards() {
       <MetricCard
         title="Throughput"
         value={`${formatNumber(avgThroughput)} tok/s`}
-        subtitle="output tok/s while generating · last 1h"
+        subtitle="avg of last 1h"
         sparkline={tokensOut.length > 0 ? tokensOut : [0]}
         color="primary"
       />
