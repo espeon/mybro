@@ -1,8 +1,11 @@
-# mybro
+# *my*bro
 
-A local HTTP reverse proxy between OpenAI/Anthropic-compatible clients and the
-[UMANS AI](https://api.code.umans.ai/v1) upstream. Tracks usage, gates
-concurrency, rotates keys, and ships with a dashboard.
+A HTTP reverse proxy between OpenAI/Anthropic-compatible clients and the
+[Umans AI](https://api.code.umans.ai/v1) upstream. It tracks usage, gates
+concurrency, and ships with a dashboard.
+
+<img width="1109" height="1047" alt="image" src="https://github.com/user-attachments/assets/45f93210-1dff-4469-b2c6-572c358da112" />
+
 
 ## Features
 
@@ -20,31 +23,9 @@ concurrency, rotates keys, and ships with a dashboard.
 
 ## Quick start
 
-### Test without the UMANS API (built-in mock)
-
-```bash
-UMANS_API_KEY=test cargo run -- --mock-upstream 9001 --mock-delay-ms 300 --mock-concurrency 4
-# → http://127.0.0.1:8084 (dashboard)
-# → http://127.0.0.1:8084/healthz
-# → http://127.0.0.1:9001/v1 (mock upstream)
-```
-
-In another shell:
-
-```bash
-./scripts/test-client.sh --stream --stream-burst 10 --burst 20
-```
-
-### Run against the real UMANS API
-
-```bash
-echo '{"API_KEY":"sk-your-umans-key-here"}' > .config/config.json
-cargo run --release
-```
-
 ## Configuration
 
-You can configure mybro in multiple ways — pick whichever fits your setup.
+You can configure mybro in multiple ways; pick whichever fits your setup.
 CLI flags override env vars, which override `config.json`.
 
 ### 1. `config.json`
@@ -72,7 +53,7 @@ Use this for persistent settings that survive restarts.
 
 ### 2. Environment variables
 
-For containers or quick overrides — same keys, no JSON wrapping:
+For containers or quick overrides, use the same keys:
 
 ```bash
 UMANS_API_KEY="sk-your-key" \
@@ -89,7 +70,7 @@ Supports: `LISTEN_ADDR`, `UPSTREAM_BASE_URL`, `REQUEST_TIMEOUT`,
 
 ### 3. CLI flags
 
-For dev/test/scripting — see [CLI flags](#cli-flags) below. Most useful:
+For dev/test/scripting, see [CLI flags](#cli-flags) below. Most useful:
 
 ```bash
 cargo run -- --mock-upstream 9001 --mock-delay-ms 300 --mock-concurrency 4
@@ -97,7 +78,7 @@ cargo run -- --mock-upstream 9001 --mock-delay-ms 300 --mock-concurrency 4
 
 ### 4. Dashboard
 
-`POST /api/config` and `POST /api/keys` mutate config at runtime — changes
+`POST /api/config` and `POST /api/keys` mutate config at runtime. Changes
 take effect immediately for new requests and are persisted via debounced
 write to `config.json`.
 
@@ -163,7 +144,3 @@ Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318` and pass
 - `.github/workflows/ci.yml` — check, clippy, test, build, docker on push/PR
 - `.github/workflows/release.yml` — on `v*.*.*` tags, builds and pushes
   multi-arch image to `ghcr.io/<owner>/mybro` + creates draft GitHub release
-
-## License
-
-MIT
