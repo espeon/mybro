@@ -2,26 +2,31 @@ import { useEffect, useState, useCallback } from "react"
 import { api, type TokenSummaryResp } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useStatsFilter } from "@/hooks/use-stats-filter"
 
 export function TokenStatsCard() {
+  const { window, model } = useStatsFilter()
   const [tokens, setTokens] = useState<TokenSummaryResp[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const json = await api.getTokenStats(3600)
+      const json = await api.getTokenStats(window, model || undefined)
       setTokens(json.tokens || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [window, model])
 
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, 15000)
     return () => clearInterval(interval)
   }, [refresh])
+
+  const windowLabel =
+    window >= 3600 ? `${window / 3600}h` : `${window / 60}m`
 
   return (
     <Card>
@@ -58,7 +63,7 @@ export function TokenStatsCard() {
           ))}
           {tokens.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No data in last hour
+              No data in last {windowLabel}
             </p>
           )}
         </div>

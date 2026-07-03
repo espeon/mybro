@@ -1,14 +1,14 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, type StatsSummary } from "@/lib/api"
 
-export function useStatsSummary(window = 3600) {
+export function useStatsSummary(window = 3600, model?: string) {
   const [summary, setSummary] = useState<StatsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.getStatsSummary(window)
+      const data = await api.getStatsSummary(window, model)
       setSummary(data)
       setError(null)
     } catch (e) {
@@ -16,7 +16,7 @@ export function useStatsSummary(window = 3600) {
     } finally {
       setLoading(false)
     }
-  }, [window])
+  }, [window, model])
 
   useEffect(() => {
     refresh()

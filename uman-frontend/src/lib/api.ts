@@ -140,14 +140,28 @@ export const api = {
       method: "POST",
     }),
   // ── Stats (time-series) ──────────────────────────────────────────────────
-  getStats: (window = 300, bucket = 10, mode = "buckets") =>
-    fetchJSON<StatsResponse>(`/api/stats?window=${window}&bucket=${bucket}&mode=${mode}`),
-  getStatsSummary: (window = 300) =>
-    fetchJSON<StatsSummary>(`/api/stats?window=${window}&mode=summary`),
-  getStatsRecent: (limit = 50) =>
-    fetchJSON<{ records: RequestRecord[] }>(`/api/stats?mode=recent&limit=${limit}`),
-  getTokenStats: (window = 300) =>
-    fetchJSON<{ window_sec: number; tokens: TokenSummaryResp[] }>(`/api/stats/tokens?window=${window}`),
+  getStats: (window = 300, bucket = 10, mode = "buckets", model?: string) => {
+    const params = new URLSearchParams({ window: String(window), bucket: String(bucket), mode })
+    if (model) params.set("model", model)
+    return fetchJSON<StatsResponse>(`/api/stats?${params}`)
+  },
+  getStatsSummary: (window = 300, model?: string) => {
+    const params = new URLSearchParams({ window: String(window), mode: "summary" })
+    if (model) params.set("model", model)
+    return fetchJSON<StatsSummary>(`/api/stats?${params}`)
+  },
+  getStatsRecent: (limit = 50, model?: string) => {
+    const params = new URLSearchParams({ mode: "recent", limit: String(limit) })
+    if (model) params.set("model", model)
+    return fetchJSON<{ records: RequestRecord[] }>(`/api/stats?${params}`)
+  },
+  getStatsModels: (window = 3600) =>
+    fetchJSON<{ models: string[] }>(`/api/stats?mode=models&window=${window}`),
+  getTokenStats: (window = 300, model?: string) => {
+    const params = new URLSearchParams({ window: String(window) })
+    if (model) params.set("model", model)
+    return fetchJSON<{ window_sec: number; tokens: TokenSummaryResp[] }>(`/api/stats/tokens?${params}`)
+  },
   getGate: () => fetchJSON<GateState>(`/api/umans/gate`),
 }
 

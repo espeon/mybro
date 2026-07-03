@@ -30,22 +30,27 @@ pub async fn get_stats(
         .get("limit")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(100);
+    let model = params.get("model").filter(|m| !m.is_empty()).map(|m| m.as_str());
 
     let window_ms = window * 1000;
     let bucket_ms = bucket * 1000;
 
     match mode {
         "summary" => {
-            let summary = state.stats.summary(window_ms);
+            let summary = state.stats.summary(window_ms, model);
             Json(json!(summary)).into_response()
         }
         "recent" => {
-            let records = state.stats.recent(limit);
+            let records = state.stats.recent(limit, model);
             Json(json!({ "records": records })).into_response()
         }
+        "models" => {
+            let models = state.stats.distinct_models(window_ms);
+            Json(json!({ "models": models })).into_response()
+        }
         _ => {
-            let buckets = state.stats.buckets(window_ms, bucket_ms);
-            let summary = state.stats.summary(window_ms);
+            let buckets = state.stats.buckets(window_ms, bucket_ms, model);
+            let summary = state.stats.summary(window_ms, model);
             Json(json!({
                 "buckets": buckets,
                 "summary": summary,
@@ -70,9 +75,10 @@ pub async fn get_token_stats(
         .get("window")
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(300);
+    let model = params.get("model").filter(|m| !m.is_empty()).map(|m| m.as_str());
     let window_ms = window * 1000;
 
-    let tokens = state.stats.token_stats(window_ms);
+    let tokens = state.stats.token_stats(window_ms, model);
     Json(json!({
         "window_sec": window,
         "tokens": tokens,

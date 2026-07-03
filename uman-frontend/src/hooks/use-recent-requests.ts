@@ -1,20 +1,20 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, type RequestRecord } from "@/lib/api"
 
-export function useRecentRequests(limit = 50) {
+export function useRecentRequests(limit = 50, model?: string) {
   const [records, setRecords] = useState<RequestRecord[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.getStatsRecent(limit)
+      const data = await api.getStatsRecent(limit, model)
       setRecords(data.records)
     } catch {
       // ignore
     } finally {
       setLoading(false)
     }
-  }, [limit])
+  }, [limit, model])
 
   useEffect(() => {
     refresh()

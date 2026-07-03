@@ -11,23 +11,15 @@ import {
 import { api, type StatsResponse } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { useStatsFilter } from "@/hooks/use-stats-filter"
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent"
-
-const WINDOW_OPTIONS = [
-  { label: "5m", value: 300 },
-  { label: "15m", value: 900 },
-  { label: "30m", value: 1800 },
-  { label: "1h", value: 3600 },
-  { label: "6h", value: 21600 },
-  { label: "24h", value: 86400 },
-]
 
 type Metric = "count" | "latency" | "errors" | "tokens"
 
 export function StatsChart() {
+  const { window: win, model } = useStatsFilter()
   const [data, setData] = useState<StatsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [window, setWindow] = useState(300)
   const [metric, setMetric] = useState<Metric>("count")
   const refreshRef = useRef<(() => void) | null>(null)
 
@@ -35,21 +27,21 @@ export function StatsChart() {
     try {
       setError(null)
       const bucket =
-        window <= 300
+        win <= 300
           ? 10
-          : window <= 900
+          : win <= 900
             ? 30
-            : window <= 3600
+            : win <= 3600
               ? 60
-              : window <= 21600
+              : win <= 21600
                 ? 600
                 : 3600
-      const d = await api.getStats(window, bucket)
+      const d = await api.getStats(win, bucket, "buckets", model)
       setData(d)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [window])
+  }, [win, model])
 
   refreshRef.current = refresh
 
@@ -114,32 +106,19 @@ export function StatsChart() {
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Request Activity</CardTitle>
-          <div className="flex flex-wrap items-center gap-1">
-            {WINDOW_OPTIONS.map((opt) => (
+          <div className="flex flex-wrap gap-1">
+            {(Object.keys(metricConfig) as Metric[]).map((m) => (
               <Button
-                key={opt.value}
-                variant={window === opt.value ? "default" : "outline"}
+                key={m}
+                variant={metric === m ? "default" : "outline"}
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => setWindow(opt.value)}
+                onClick={() => setMetric(m)}
               >
-                {opt.label}
+                {metricConfig[m].label}
               </Button>
             ))}
           </div>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {(Object.keys(metricConfig) as Metric[]).map((m) => (
-            <Button
-              key={m}
-              variant={metric === m ? "default" : "outline"}
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => setMetric(m)}
-            >
-              {metricConfig[m].label}
-            </Button>
-          ))}
         </div>
       </CardHeader>
       <CardContent>

@@ -84,11 +84,11 @@ impl StatsCollector {
     /// Aggregate into time buckets of `bucket_ms` duration, covering the last
     /// `window_ms` of data. Returns buckets oldest→newest. Two-pass: first
     /// counts/sums, then collects latencies per bucket for percentiles.
-    pub fn buckets(&self, window_ms: u64, bucket_ms: u64) -> Vec<StatsBucket> {
+    pub fn buckets(&self, window_ms: u64, bucket_ms: u64, model: Option<&str>) -> Vec<StatsBucket> {
         // Use SQLite for windows longer than memory coverage, or if no DB just use memory
         if let Some(db) = &self.db {
             if window_ms > MEMORY_WINDOW_MS {
-                match db.query_buckets(window_ms, bucket_ms) {
+                match db.query_buckets(window_ms, bucket_ms, model) {
                     Ok(buckets) => return buckets,
                     Err(e) => tracing::warn!("stats db query failed: {}", e),
                 }
@@ -131,6 +131,11 @@ impl StatsCollector {
         for rec in records.iter() {
             if rec.ts_ms < start_ms || rec.ts_ms > now_ms {
                 continue;
+            }
+            if let Some(m) = model {
+                if rec.model != m {
+                    continue;
+                }
             }
             let bi = ((rec.ts_ms - start_ms) / bucket_ms) as usize;
             if bi >= num_buckets {
@@ -202,15 +207,21 @@ impl StatsCollector {
     }
 
     /// Get recent raw records (for a table view), newest first.
-    pub fn recent(&self, limit: usize) -> Vec<RequestRecord> {
+    pub fn recent(&self, limit: usize, model: Option<&str>) -> Vec<RequestRecord> {
         let records = self.records.lock();
-        records.iter().rev().take(limit).cloned().collect()
+        records
+            .iter()
+            .rev()
+            .filter(|r| model.map_or(true, |m| r.model == m))
+            .take(limit)
+            .cloned()
+            .collect()
     }
 
     /// Summary stats for the last `window_ms`.
-    pub fn token_stats(&self, window_ms: u64) -> Vec<crate::db::TokenSummary> {
+    pub fn token_stats(&self, window_ms: u64, model: Option<&str>) -> Vec<crate::db::TokenSummary> {
         if let Some(db) = &self.db {
-            match db.query_token_stats(window_ms) {
+            match db.query_token_stats(window_ms, model) {
                 Ok(tokens) => return tokens,
                 Err(e) => tracing::warn!("token stats query failed: {}", e),
             }
@@ -221,7 +232,11 @@ impl StatsCollector {
         let start_ms = now_ms.saturating_sub(window_ms);
         let mut by_key: std::collections::BTreeMap<String, crate::db::TokenSummary> =
             std::collections::BTreeMap::new();
-        for r in records.iter().filter(|r| r.ts_ms >= start_ms) {
+        for r in records
+            .iter()
+            .filter(|r| r.ts_ms >= start_ms)
+            .filter(|r| model.map_or(true, |m| r.model == m))
+        {
             let e = by_key.entry(r.key_name.clone()).or_insert_with(|| {
                 crate::db::TokenSummary {
                     key_name: r.key_name.clone(),
@@ -245,10 +260,35 @@ impl StatsCollector {
         by_key.into_values().collect()
     }
 
-    pub fn summary(&self, window_ms: u64) -> StatsSummary {
+    /// Distinct model names seen in the last `window_ms`, for populating
+    /// the dashboard filter dropdown.
+    pub fn distinct_models(&self, window_ms: u64) -> Vec<String> {
         if let Some(db) = &self.db {
             if window_ms > MEMORY_WINDOW_MS {
-                match db.query_summary(window_ms) {
+                match db.query_distinct_models(window_ms) {
+                    Ok(models) => return models,
+                    Err(e) => tracing::warn!("distinct models query failed: {}", e),
+                }
+            }
+        }
+        let records = self.records.lock();
+        let now_ms = now_millis();
+        let start_ms = now_ms.saturating_sub(window_ms);
+        let mut models: Vec<String> = records
+            .iter()
+            .filter(|r| r.ts_ms >= start_ms)
+            .map(|r| r.model.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        models.sort();
+        models
+    }
+
+    pub fn summary(&self, window_ms: u64, model: Option<&str>) -> StatsSummary {
+        if let Some(db) = &self.db {
+            if window_ms > MEMORY_WINDOW_MS {
+                match db.query_summary(window_ms, model) {
                     Ok(summary) => return summary,
                     Err(e) => tracing::warn!("stats db summary failed: {}", e),
                 }
@@ -261,6 +301,7 @@ impl StatsCollector {
         let relevant: Vec<&RequestRecord> = records
             .iter()
             .filter(|r| r.ts_ms >= start_ms)
+            .filter(|r| model.map_or(true, |m| r.model == m))
             .collect();
 
         let count = relevant.len() as u64;
@@ -453,7 +494,7 @@ mod tests {
         // No TTFT reported → not measurable, excluded from both sums.
         collector.record(record_at(now - 500, 300, None, 30));
 
-        let s = collector.summary(60_000);
+        let s = collector.summary(60_000, None);
         assert_eq!(s.gen_tokens_out, 130);
         assert_eq!(s.gen_time_ms, 1300);
         let throughput = s.gen_tokens_out as f64 / (s.gen_time_ms as f64 / 1000.0);
@@ -467,7 +508,7 @@ mod tests {
         // duration == ttft: no measurable generation window.
         collector.record(record_at(now - 100, 200, Some(200), 40));
 
-        let s = collector.summary(60_000);
+        let s = collector.summary(60_000, None);
         assert_eq!(s.gen_tokens_out, 0);
         assert_eq!(s.gen_time_ms, 0);
     }

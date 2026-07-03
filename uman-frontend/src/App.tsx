@@ -8,7 +8,9 @@ import { CacheCard } from "@/components/cache-card"
 import { InFlightCard } from "@/components/in-flight-card"
 import { RecentRequestsTable } from "@/components/recent-requests-table"
 import { StatusBar } from "@/components/status-bar"
+import { StatsFilterBar } from "@/components/stats-filter-bar"
 import { LoginPage } from "@/components/login-page"
+import { StatsFilterProvider, useStatsFilter } from "@/hooks/use-stats-filter"
 import { useStatsSummary } from "@/hooks/use-stats-summary"
 import { useGate } from "@/hooks/use-gate"
 import { useRecentRequests } from "@/hooks/use-recent-requests"
@@ -101,7 +103,9 @@ export function App() {
   }
 
   return (
-    <Dashboard apiKey={apiKey} onLogout={logout} onRestart={handleRestart} />
+    <StatsFilterProvider>
+      <Dashboard apiKey={apiKey} onLogout={logout} onRestart={handleRestart} />
+    </StatsFilterProvider>
   )
 }
 
@@ -114,9 +118,10 @@ function Dashboard({
   onLogout: () => void
   onRestart: () => void
 }) {
-  const { summary, error: summaryError } = useStatsSummary(3600)
+  const { window, model } = useStatsFilter()
+  const { summary, error: summaryError } = useStatsSummary(window, model)
   const { gate, error: gateError } = useGate()
-  const { records } = useRecentRequests(50)
+  const { records } = useRecentRequests(50, model)
 
   return (
     <div className="min-h-svh bg-background p-4 md:p-6">
@@ -147,6 +152,9 @@ function Dashboard({
 
         {/* Status bar — dot color reflects actual health, not just "signed in" */}
         <StatusBar apiKey={apiKey} gate={gate} />
+
+        {/* Filter bar — controls all stats components below */}
+        <StatsFilterBar />
 
         {/* Metric cards (no Latency — nixed) */}
         <StatsCards />

@@ -176,31 +176,69 @@ impl StatsDB {
         &self,
         window_ms: u64,
         bucket_ms: u64,
+        model: Option<&str>,
     ) -> Result<Vec<crate::stats::StatsBucket>, rusqlite::Error> {
         let now_ms = now_millis();
         let start_ms = now_ms.saturating_sub(window_ms);
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT
-                (ts_ms / ?) * ? as ts,
-                COUNT(*) as count,
-                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
-                SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
-                AVG(duration_ms) as avg_latency,
-                MAX(duration_ms) as max_latency,
-                SUM(tokens_in) as tokens_in,
-                SUM(tokens_out) as tokens_out,
-                SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
-                SUM(cached_tokens) as cached_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens,
-                AVG(ttft_ms) as avg_ttft
-             FROM requests
-             WHERE ts_ms >= ?
-             GROUP BY ts
-             ORDER BY ts ASC",
-        )?;
 
-        let mut rows = stmt.query(params![bucket_ms, bucket_ms, start_ms])?;
+        let (sql, param_values): (String, Vec<Box<dyn rusqlite::ToSql>>) = match model {
+            Some(m) => (
+                "SELECT
+                    (ts_ms / ?) * ? as ts,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
+                    AVG(duration_ms) as avg_latency,
+                    MAX(duration_ms) as max_latency,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                    SUM(cached_tokens) as cached_tokens,
+                    SUM(cache_creation_tokens) as cache_creation_tokens,
+                    AVG(ttft_ms) as avg_ttft
+                 FROM requests
+                 WHERE ts_ms >= ? AND model = ?
+                 GROUP BY ts
+                 ORDER BY ts ASC"
+                    .to_string(),
+                vec![
+                    Box::new(bucket_ms as i64),
+                    Box::new(bucket_ms as i64),
+                    Box::new(start_ms as i64),
+                    Box::new(m.to_string()),
+                ],
+            ),
+            None => (
+                "SELECT
+                    (ts_ms / ?) * ? as ts,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
+                    AVG(duration_ms) as avg_latency,
+                    MAX(duration_ms) as max_latency,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                    SUM(cached_tokens) as cached_tokens,
+                    SUM(cache_creation_tokens) as cache_creation_tokens,
+                    AVG(ttft_ms) as avg_ttft
+                 FROM requests
+                 WHERE ts_ms >= ?
+                 GROUP BY ts
+                 ORDER BY ts ASC"
+                    .to_string(),
+                vec![
+                    Box::new(bucket_ms as i64),
+                    Box::new(bucket_ms as i64),
+                    Box::new(start_ms as i64),
+                ],
+            ),
+        };
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+        let mut rows = stmt.query(param_refs.as_slice())?;
         let mut buckets = Vec::new();
         while let Some(row) = rows.next()? {
             let tokens_in = row.get::<_, Option<u64>>(6)?.unwrap_or(0);
@@ -234,30 +272,62 @@ impl StatsDB {
         Ok(buckets)
     }
 
-    pub fn query_summary(&self, window_ms: u64) -> Result<crate::stats::StatsSummary, rusqlite::Error> {
+    pub fn query_summary(
+        &self,
+        window_ms: u64,
+        model: Option<&str>,
+    ) -> Result<crate::stats::StatsSummary, rusqlite::Error> {
         let now_ms = now_millis();
         let start_ms = now_ms.saturating_sub(window_ms);
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT
-                COUNT(*) as count,
-                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
-                SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
-                SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
-                SUM(tokens_in) as tokens_in,
-                SUM(tokens_out) as tokens_out,
-                AVG(duration_ms) as avg_latency,
-                AVG(ttft_ms) as avg_ttft,
-                SUM(cached_tokens) as cached_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens,
-                MAX(tokens_in) as max_context,
-                SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN tokens_out ELSE 0 END) as gen_tokens_out,
-                SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms ELSE 0 END) as gen_time_ms
-             FROM requests
-             WHERE ts_ms >= ?",
-        )?;
 
-        let row = stmt.query_row(params![start_ms], |row| {
+        let (sql, param_values): (String, Vec<Box<dyn rusqlite::ToSql>>) = match model {
+            Some(m) => (
+                "SELECT
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
+                    SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    AVG(duration_ms) as avg_latency,
+                    AVG(ttft_ms) as avg_ttft,
+                    SUM(cached_tokens) as cached_tokens,
+                    SUM(cache_creation_tokens) as cache_creation_tokens,
+                    MAX(tokens_in) as max_context,
+                    SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN tokens_out ELSE 0 END) as gen_tokens_out,
+                    SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms ELSE 0 END) as gen_time_ms
+                 FROM requests
+                 WHERE ts_ms >= ? AND model = ?"
+                    .to_string(),
+                vec![Box::new(start_ms as i64), Box::new(m.to_string())],
+            ),
+            None => (
+                "SELECT
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(CASE WHEN status IN (429, 503) THEN 1 ELSE 0 END) as throttled,
+                    SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) as cached,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    AVG(duration_ms) as avg_latency,
+                    AVG(ttft_ms) as avg_ttft,
+                    SUM(cached_tokens) as cached_tokens,
+                    SUM(cache_creation_tokens) as cache_creation_tokens,
+                    MAX(tokens_in) as max_context,
+                    SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN tokens_out ELSE 0 END) as gen_tokens_out,
+                    SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms ELSE 0 END) as gen_time_ms
+                 FROM requests
+                 WHERE ts_ms >= ?"
+                    .to_string(),
+                vec![Box::new(start_ms as i64)],
+            ),
+        };
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+
+        let row = stmt.query_row(param_refs.as_slice(), |row| {
             let tokens_in = row.get::<_, Option<u64>>(4)?.unwrap_or(0);
             let cached_tokens = row.get::<_, Option<u64>>(8)?.unwrap_or(0);
             let cache_creation_tokens = row.get::<_, Option<u64>>(9)?.unwrap_or(0);
@@ -290,25 +360,48 @@ impl StatsDB {
     pub fn query_token_stats(
         &self,
         window_ms: u64,
+        model: Option<&str>,
     ) -> Result<Vec<TokenSummary>, rusqlite::Error> {
         let now_ms = now_millis();
         let start_ms = now_ms.saturating_sub(window_ms);
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT
-                key_name,
-                COUNT(*) as count,
-                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
-                SUM(tokens_in) as tokens_in,
-                SUM(tokens_out) as tokens_out,
-                AVG(duration_ms) as avg_latency
-             FROM requests
-             WHERE ts_ms >= ?
-             GROUP BY key_name
-             ORDER BY count DESC",
-        )?;
 
-        let mut rows = stmt.query(params![start_ms])?;
+        let (sql, param_values): (String, Vec<Box<dyn rusqlite::ToSql>>) = match model {
+            Some(m) => (
+                "SELECT
+                    key_name,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    AVG(duration_ms) as avg_latency
+                 FROM requests
+                 WHERE ts_ms >= ? AND model = ?
+                 GROUP BY key_name
+                 ORDER BY count DESC"
+                    .to_string(),
+                vec![Box::new(start_ms as i64), Box::new(m.to_string())],
+            ),
+            None => (
+                "SELECT
+                    key_name,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                    SUM(tokens_in) as tokens_in,
+                    SUM(tokens_out) as tokens_out,
+                    AVG(duration_ms) as avg_latency
+                 FROM requests
+                 WHERE ts_ms >= ?
+                 GROUP BY key_name
+                 ORDER BY count DESC"
+                    .to_string(),
+                vec![Box::new(start_ms as i64)],
+            ),
+        };
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+        let mut rows = stmt.query(param_refs.as_slice())?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
             out.push(TokenSummary {
@@ -319,6 +412,22 @@ impl StatsDB {
                 tokens_out: row.get::<_, u64>(4)?,
                 avg_latency_ms: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
             });
+        }
+        Ok(out)
+    }
+
+    /// Distinct model names seen in the last `window_ms`, for the filter dropdown.
+    pub fn query_distinct_models(&self, window_ms: u64) -> Result<Vec<String>, rusqlite::Error> {
+        let now_ms = now_millis();
+        let start_ms = now_ms.saturating_sub(window_ms);
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT model FROM requests WHERE ts_ms >= ? ORDER BY model ASC",
+        )?;
+        let mut rows = stmt.query(params![start_ms as i64])?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            out.push(row.get(0)?);
         }
         Ok(out)
     }
