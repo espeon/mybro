@@ -39,18 +39,27 @@ pub async fn serve_dashboard(
 
 /// Serve static assets from the embedded frontend (JS, CSS, images, etc.).
 /// Also handles SPA routing by falling back to index.html for non-asset paths.
+///
+/// Note: we extract the URI path manually from the Request instead of using
+/// `Path<String>`, because in a fallback handler `Path<String>` requires the
+/// request to have at least one path segment (e.g. it fails on bare `/`).
 pub async fn serve_asset(
     State(state): State<Arc<AppState>>,
-    axum::extract::Path(raw_path): axum::extract::Path<String>,
+    req: axum::extract::Request,
 ) -> Response {
+    // Extract the path from the request URI.
+    let raw_path = req
+        .uri()
+        .path()
+        .trim_start_matches('/')
+        .to_string();
+
     // In dev mode, proxy to the Vite dev server
     if let Some(dev_url) = &state.dev_proxy {
         return proxy_to_dev(dev_url, &format!("/{}", raw_path)).await;
     }
 
-    // axum's Path extractor in a fallback handler may include the leading
-    // slash (e.g. "/assets/foo.js"). rust-embed expects paths without it.
-    let path = raw_path.trim_start_matches('/');
+    let path = raw_path.as_str();
     let path_with_html = format!("{}.html", path);
 
     // Try exact path → with .html suffix → SPA fallback to index.html
@@ -66,7 +75,6 @@ pub async fn serve_asset(
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, mime.as_ref())
-                // Static assets get long cache; index.html is always fresh
                 .header(
                     header::CACHE_CONTROL,
                     if is_index {
